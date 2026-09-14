@@ -37,10 +37,24 @@ td{padding:8px 0;border-top:1px solid var(--rule)}
 td:last-child{text-align:right;color:var(--muted)}
 #spark{width:100%;height:176px;display:block;touch-action:none}
 .rng{font-size:11px;padding:4px 9px;color:var(--muted)}
+.tabs{display:flex;gap:22px;border-bottom:1px solid var(--rule);margin-bottom:14px}
+.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);
+     font-size:15px;padding:8px 2px;cursor:pointer;font-family:inherit}
+.tab[data-on="true"]{color:var(--text);border-bottom-color:var(--ice)}
+.big{font-size:42px;font-weight:200;color:var(--ice);letter-spacing:-.02em}
+.fld{flex:1 1 120px}
+.fld label{font-size:11.5px;color:var(--muted);display:block;margin-bottom:5px}
+.hide{display:none}
 .rng:active{border-color:var(--ice);color:var(--ice)}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px}
 </style></head><body>
 
+<div class="tabs">
+  <button class="tab" data-tab="chiller" data-on="true">Chiller</button>
+  <button class="tab" data-tab="water">Water care</button>
+</div>
+
+<div id="pane-chiller">
 <div class="between">
   <div>
     <div class="tiny muted">Water</div>
@@ -95,6 +109,46 @@ td:last-child{text-align:right;color:var(--muted)}
     5&deg;F above target, so it stops where you send it rather than overshooting.
   </div>
 </div>
+
+</div><!-- /pane-chiller -->
+
+<div id="pane-water" class="hide">
+  <div class="card">
+    <div class="tiny muted" style="margin-bottom:12px">Your tub</div>
+    <div class="row" style="flex-wrap:wrap;gap:14px">
+      <div class="fld"><label>Volume (gallons)</label>
+        <input type="number" id="vol" min="10" max="400" step="1"></div>
+      <div class="fld"><label>Peroxide strength</label>
+        <select id="pct">
+          <option value="3">3%</option><option value="6">6%</option>
+          <option value="12">12%</option><option value="27">27%</option>
+          <option value="35">35%</option></select></div>
+      <div class="fld"><label>Target ppm</label>
+        <input type="number" id="tgt" min="20" max="150" step="5"></div>
+    </div>
+    <div class="tiny muted" id="volNote" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <div class="tiny muted" style="margin-bottom:12px">Test strip reads</div>
+    <div class="row" style="gap:14px;align-items:flex-end">
+      <div class="fld" style="max-width:120px">
+        <input type="number" id="ppm" min="0" max="200" step="5" value="10"></div>
+      <button class="pill" id="calc">Work it out</button>
+    </div>
+    <div id="doseOut" style="margin-top:16px"></div>
+    <div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="pill" id="logRead">Log this reading</button>
+      <button class="pill" id="logDose">I added the dose</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tiny muted" style="margin-bottom:8px">History</div>
+    <table id="wlog"></table>
+    <div class="tiny muted" id="decay" style="margin-top:10px"></div>
+  </div>
+</div><!-- /pane-water -->
 
 <div class="tiny muted" style="margin-top:16px" id="foot"></div>
 <script>
@@ -375,6 +429,134 @@ async function chart() {
     clamp(); draw();
   });
 })();
+
+/* ---------------- water care ---------------- */
+/* mg of H2O2 per mL of stock, accounting for solution density - a 12%
+   solution is 12% by weight and denser than water, so it is not 120 mg/mL */
+var STOCK = { 3: 30.3, 6: 61.3, 12: 125.2, 27: 297.8, 35: 395.5 };
+var L_PER_GAL = 3.785411784, ML_PER_OZ = 29.5735;
+var WP = {};
+
+function doseCalc(gal, pct, now, target) {
+  var litres = gal * L_PER_GAL;
+  var deficit = Math.max(0, target - now);
+  var mg = litres * deficit;
+  var ml = mg / STOCK[pct];
+  return { litres: litres, deficit: deficit, mg: mg, ml: ml, oz: ml / ML_PER_OZ };
+}
+
+function showDose() {
+  var gal = +$("vol").value, pct = +$("pct").value;
+  var now = +$("ppm").value, tgt = +$("tgt").value;
+  if (!gal || !pct) return;
+  var d = doseCalc(gal, pct, now, tgt);
+  if (d.deficit <= 0) {
+    $("doseOut").innerHTML = '<div style="color:#a8ecff;font-size:15px">' +
+      'Already at or above ' + tgt + ' ppm. Nothing to add.</div>';
+    return;
+  }
+  $("doseOut").innerHTML =
+    '<div class="big">' + d.oz.toFixed(1) +
+    '<span style="font-size:16px;color:#7b99a8;margin-left:6px">fl oz</span>' +
+    '<span style="font-size:14px;color:#7b99a8;margin-left:12px">(' +
+    Math.round(d.ml) + ' mL)</span></div>' +
+    '<div class="tiny muted" style="margin-top:8px;line-height:1.6">of ' + pct +
+    '% raises ' + gal + ' gal from ' + now + ' to ' + tgt + ' ppm. Pump running, lid off, ' +
+    'and give it 15 minutes before you get in.' +
+    (pct >= 12 ? ' Gloves - ' + pct + '% bleaches skin on contact.' : '') + '</div>';
+}
+
+/* The dose is also a volume measurement: if you know the mg added and see
+   the ppm it produced, volume falls straight out. */
+function volumeFromRise(mg, rise) { return mg / rise / L_PER_GAL; }
+
+async function waterLoad() {
+  try { WP = await api("params"); } catch (e) { return; }
+  if (WP.volume_gal) $("vol").value = WP.volume_gal;
+  if (WP.h2o2_stock_pct) $("pct").value = WP.h2o2_stock_pct;
+  $("tgt").value = WP.h2o2_target_ppm || 60;
+  $("volNote").textContent = (WP.volume_gal || 100) + " gal = " +
+    Math.round((WP.volume_gal || 100) * L_PER_GAL) + " litres. " +
+    "Dose, wait 15 min, retest - the rise tells you the real volume.";
+  showDose();
+  waterHistory();
+}
+
+async function waterHistory() {
+  var rows;
+  try { rows = await api("waterHistory"); } catch (e) { return; }
+  var reads = rows.filter(function (r) { return r.code === "h2o2_ppm"; });
+  var html = rows.slice(0, 10).map(function (r) {
+    var d = new Date(r.ts);
+    var what = r.code === "h2o2_ppm" ? "tested " + r.value + " ppm"
+                                     : "added " + r.value + " oz";
+    return "<tr><td>" + d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+           " " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) +
+           "</td><td>" + what + "</td></tr>";
+  }).join("");
+  $("wlog").innerHTML = html || '<tr><td class="muted">Nothing logged yet</td><td></td></tr>';
+
+  // decay rate between consecutive readings with no dose in between
+  var r2 = reads.slice().sort(function (a, b) { return new Date(a.ts) - new Date(b.ts); });
+  var rates = [];
+  for (var i = 1; i < r2.length; i++) {
+    var days = (new Date(r2[i].ts) - new Date(r2[i - 1].ts)) / 864e5;
+    var drop = +r2[i - 1].value - +r2[i].value;
+    var dosed = rows.some(function (x) {
+      return x.code === "h2o2_dose_oz" &&
+             new Date(x.ts) > new Date(r2[i - 1].ts) && new Date(x.ts) < new Date(r2[i].ts);
+    });
+    if (days > 0.2 && drop > 0 && !dosed) rates.push(drop / days);
+  }
+  if (rates.length) {
+    var mean = rates.reduce(function (a, b) { return a + b; }, 0) / rates.length;
+    var floorPpm = WP.h2o2_min_ppm || 30;
+    var left = Math.max(0, (+$("ppm").value - floorPpm) / mean);
+    $("decay").innerHTML = "Falling about <span style='color:#dbeaf1'>" + mean.toFixed(1) +
+      " ppm a day</span> - you would reach " + floorPpm + " ppm in roughly " +
+      left.toFixed(1) + " days.";
+  } else {
+    $("decay").textContent = "Log a few readings over a week and this works out your decay rate.";
+  }
+}
+
+$("calc").onclick = showDose;
+["vol","pct","tgt","ppm"].forEach(function (id) {
+  $(id).addEventListener("change", function () {
+    showDose();
+    if (id === "vol" || id === "pct" || id === "tgt") {
+      var map = { vol: "volume_gal", pct: "h2o2_stock_pct", tgt: "h2o2_target_ppm" };
+      api("setParam", { key: map[id], value: $(id).value, source: "set in app" });
+    }
+  });
+});
+
+$("logRead").onclick = async function () {
+  await api("logWater", { code: "h2o2_ppm", value: $("ppm").value });
+  waterHistory();
+};
+$("logDose").onclick = async function () {
+  var gal = +$("vol").value, pct = +$("pct").value;
+  var d = doseCalc(gal, pct, +$("ppm").value, +$("tgt").value);
+  await api("logWater", { code: "h2o2_dose_oz", value: d.oz.toFixed(2) });
+  $("decay").textContent = "Logged. Retest in 15 min - if it reads X, your tub is " +
+    "about " + Math.round(volumeFromRise(d.mg, d.deficit)) + " gal at target, " +
+    "or scale: volume = " + Math.round(d.mg) + " mg / (rise in ppm) / 3.785.";
+  waterHistory();
+};
+
+/* tabs */
+document.querySelectorAll(".tab").forEach(function (b) {
+  b.onclick = function () {
+    document.querySelectorAll(".tab").forEach(function (x) { x.dataset.on = "false"; });
+    b.dataset.on = "true";
+    var w = b.dataset.tab === "water";
+    $("pane-water").className = w ? "" : "hide";
+    $("pane-chiller").className = w ? "hide" : "";
+    if (w && !WP.volume_gal) waterLoad();
+  };
+});
+waterLoad();
 
 const today = new Date();
 $("d").value = today.toISOString().slice(0, 10);
