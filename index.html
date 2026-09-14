@@ -168,6 +168,26 @@ td:last-child{text-align:right;color:var(--muted)}
       <button class="pill" data-ev="filter">Cleaned filter</button>
       <button class="pill" data-ev="note">Note</button>
     </div>
+    <div id="evForm" class="hide" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--rule)">
+      <div class="row" style="flex-wrap:wrap;gap:12px">
+        <div class="fld" id="wrapSup"><label>Product</label>
+          <select id="evSup"></select></div>
+        <div class="fld" id="wrapAmt"><label>Amount used</label>
+          <input type="number" id="evAmt" step="0.1"></div>
+        <div class="fld" id="wrapGal"><label>Gallons filled</label>
+          <input type="number" id="evGal" step="1"></div>
+        <div class="fld"><label>When</label>
+          <input type="datetime-local" id="evWhen"></div>
+      </div>
+      <div class="row" style="gap:12px;margin-top:12px">
+        <div class="fld"><label>Note (optional)</label><input type="text" id="evNote"></div>
+      </div>
+      <div class="tiny muted" id="evHint" style="margin-top:10px"></div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="pill" id="evSave">Save</button>
+        <button class="pill" id="evCancel">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -176,6 +196,36 @@ td:last-child{text-align:right;color:var(--muted)}
       <button class="rowbtn" id="addSup">add</button>
     </div>
     <div id="supList"></div>
+    <div id="supForm" class="hide" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--rule)">
+      <div class="row" style="flex-wrap:wrap;gap:12px">
+        <div class="fld" style="flex:1 1 180px"><label>Product name</label>
+          <input type="text" id="sName"></div>
+        <div class="fld" style="max-width:88px"><label>Unit</label>
+          <select id="sUnit"><option>oz</option><option>mL</option>
+            <option>g</option><option>tabs</option></select></div>
+        <div class="fld" style="max-width:110px"><label>Bottle size</label>
+          <input type="number" id="sSize" step="0.5"></div>
+        <div class="fld" style="max-width:110px"><label>Amount left</label>
+          <input type="number" id="sOnHand" step="0.5"></div>
+      </div>
+      <div class="tiny muted" style="margin:14px 0 8px">From the product label</div>
+      <div class="row" style="flex-wrap:wrap;gap:12px">
+        <div class="fld"><label>First / shock dose per 100 gal</label>
+          <input type="number" id="sInit" step="0.1"></div>
+        <div class="fld"><label>Routine dose per 100 gal</label>
+          <input type="number" id="sDose" step="0.1"></div>
+        <div class="fld" style="max-width:110px"><label>Repeat every (days)</label>
+          <input type="number" id="sIvl" step="1"></div>
+        <div class="fld" style="max-width:110px"><label>Reorder below</label>
+          <input type="number" id="sReorder" step="0.5"></div>
+      </div>
+      <div class="tiny muted" id="sHint" style="margin-top:10px"></div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="pill" id="sSave">Save</button>
+        <button class="pill" id="sCancel">Cancel</button>
+        <button class="pill" id="sDelete" style="margin-left:auto;border-color:#6b3b3b;color:#c98a8a">Remove</button>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -594,41 +644,98 @@ async function careLoad() {
   }).join("") || '<tr><td class="muted">Nothing logged yet</td><td></td></tr>';
 }
 
-/* quick-add buttons */
+/* ---- event form ---- */
+var EVKIND = null;
+var localNow = function (d) {
+  d = d || new Date();
+  var o = d.getTimezoneOffset() * 60000;
+  return new Date(d - o).toISOString().slice(0, 16);
+};
+
+function openEv(kind) {
+  EVKIND = kind;
+  $("evForm").className = "";
+  $("wrapSup").className = kind === "treatment" ? "fld" : "fld hide";
+  $("wrapAmt").className = kind === "treatment" ? "fld" : "fld hide";
+  $("wrapGal").className = kind === "refill" ? "fld" : "fld hide";
+  $("evWhen").value = localNow();
+  $("evNote").value = "";
+  if (kind === "treatment") {
+    $("evSup").innerHTML = CARE.supplies.map(function (s) {
+      return '<option value="' + s.id + '">' + s.name + '</option>';
+    }).join("");
+    evSuggest();
+  }
+  $("evHint").textContent = kind === "refill"
+    ? "This resets the tub volume and marks where the thermal model goes stale."
+    : kind === "treatment"
+      ? "Backdate it if you did this earlier - the reminder counts from when you did it."
+      : "";
+}
+
+function evSuggest() {
+  var s = CARE.supplies.find(function (x) { return x.id === +$("evSup").value; });
+  if (!s) return;
+  var d = CARE.due.find(function (x) { return x.supply_id === s.id; });
+  if (d) {
+    $("evAmt").value = d.last_ts ? d.dose : d.first_dose;
+    $("evHint").textContent = (d.last_ts ? "Routine dose " : "First dose ") +
+      (d.last_ts ? d.dose : d.first_dose) + " " + s.unit + " for " +
+      CARE.volume_gal + " gal. Backdate if you did it earlier.";
+  } else { $("evAmt").value = ""; }
+}
+$("evSup").onchange = evSuggest;
+$("evCancel").onclick = function () { $("evForm").className = "hide"; };
+
+$("evSave").onclick = async function () {
+  var q = { kind: EVKIND, ts: $("evWhen").value };
+  if (EVKIND === "treatment") { q.supply_id = $("evSup").value; q.amount = $("evAmt").value; }
+  if (EVKIND === "refill") q.value = $("evGal").value || CARE.volume_gal;
+  if ($("evNote").value) q.note = $("evNote").value;
+  await api("addEvent", q);
+  $("evForm").className = "hide";
+  careLoad();
+};
+
 document.querySelectorAll("[data-ev]").forEach(function (b) {
-  b.onclick = async function () {
-    var kind = b.dataset.ev, q = { kind: kind };
-    if (kind === "treatment") {
-      var opts = CARE.supplies.map(function (s, i) { return (i + 1) + ") " + s.name; }).join("\n");
-      var pick = prompt("Which supply?\n" + opts, "1");
-      if (pick === null) return;
-      var sup = CARE.supplies[+pick - 1];
-      if (!sup) return;
-      var sug = CARE.due.find(function (d) { return d.supply_id === sup.id; });
-      var amt = prompt("How much did you add? (" + sup.unit + ")",
-                       sug ? (sug.last_ts ? sug.dose : sug.first_dose) : "1");
-      if (amt === null || isNaN(+amt)) return;
-      q.supply_id = sup.id; q.amount = amt;
-    } else if (kind === "refill") {
-      var gal = prompt("How many gallons did you fill? This resets the tub volume, " +
-                       "and the thermal model refits from here.", CARE.volume_gal);
-      if (gal === null || isNaN(+gal)) return;
-      q.value = gal;
-    } else if (kind === "note") {
-      var n = prompt("Note");
-      if (!n) return;
-      q.note = n;
-    }
-    await api("addEvent", q);
-    careLoad();
-  };
+  b.onclick = function () { openEv(b.dataset.ev); };
 });
 
-$("addSup").onclick = async function () {
-  var n = prompt("Supply name");
-  if (!n) return;
-  var sz = prompt("Container size (oz)", "32");
-  await api("addSupply", { name: n, container_size: sz || 32, on_hand: sz || 32 });
+/* ---- supply form ---- */
+var SUPID = null;
+function openSup(s) {
+  SUPID = s ? s.id : null;
+  $("supForm").className = "";
+  $("sName").value = s ? s.name : "";
+  $("sUnit").value = s ? s.unit : "oz";
+  $("sSize").value = s ? (s.container_size || "") : "";
+  $("sOnHand").value = s ? s.on_hand : "";
+  $("sInit").value = s && s.initial_per_100gal !== null ? s.initial_per_100gal : "";
+  $("sDose").value = s && s.dose_per_100gal !== null ? s.dose_per_100gal : "";
+  $("sIvl").value = s && s.interval_days !== null ? s.interval_days : "";
+  $("sReorder").value = s ? (s.reorder_below || "") : "";
+  $("sDelete").className = s ? "pill" : "pill hide";
+  $("sHint").textContent = "Leave the dose and interval blank for anything you " +
+    "do not use on a schedule. Doses are per 100 gallons - the app scales them " +
+    "to your " + CARE.volume_gal + " gal.";
+}
+$("sCancel").onclick = function () { $("supForm").className = "hide"; };
+$("addSup").onclick = function () { openSup(null); };
+
+$("sSave").onclick = async function () {
+  var q = { name: $("sName").value || "Unnamed", unit: $("sUnit").value,
+            container_size: $("sSize").value, on_hand: $("sOnHand").value,
+            initial_per_100gal: $("sInit").value, dose_per_100gal: $("sDose").value,
+            interval_days: $("sIvl").value, reorder_below: $("sReorder").value };
+  if (SUPID) { q.id = SUPID; await api("updateSupply", q); }
+  else await api("addSupply", q);
+  $("supForm").className = "hide";
+  careLoad();
+};
+$("sDelete").onclick = async function () {
+  if (!SUPID || !confirm("Remove this supply?")) return;
+  await api("deleteSupply", { id: SUPID });
+  $("supForm").className = "hide";
   careLoad();
 };
 
@@ -639,17 +746,7 @@ document.addEventListener("click", async function (e) {
     await api("deleteEvent", { id: t.dataset.evdel }); careLoad();
   }
   if (t.dataset && t.dataset.sup) {
-    var s = CARE.supplies.find(function (x) { return x.id === +t.dataset.sup; });
-    var q = { id: s.id };
-    var oh = prompt("Amount left (" + s.unit + ")", s.on_hand); if (oh === null) return;
-    q.on_hand = oh;
-    var dr = prompt("Dose per 100 gallons (blank = not a recurring treatment)",
-                    s.dose_per_100gal === null ? "" : s.dose_per_100gal);
-    if (dr !== null && dr !== "") q.dose_per_100gal = dr;
-    var iv = prompt("Repeat every how many days?",
-                    s.interval_days === null ? "" : s.interval_days);
-    if (iv !== null && iv !== "") q.interval_days = iv;
-    await api("updateSupply", q); careLoad();
+    openSup(CARE.supplies.find(function (x) { return x.id === +t.dataset.sup; }));
   }
 });
 
