@@ -134,49 +134,48 @@ td:last-child{text-align:right;color:var(--muted)}
   </div>
 
   <div class="card">
-    <div class="tiny muted" style="margin-bottom:12px">Test strip reads</div>
-    <div class="row" style="gap:14px;align-items:flex-end">
-      <div class="fld" style="max-width:120px">
-        <input type="number" id="ppm" min="0" max="200" step="5" value="10"></div>
-      <button class="pill" id="calc">Work it out</button>
-    </div>
-    <div id="doseOut" style="margin-top:16px"></div>
-    <div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">
-      <button class="pill" id="logRead">Log this reading</button>
-      <button class="pill" id="logDose">I added the dose</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="tiny muted" style="margin-bottom:8px">History</div>
-    <table id="wlog"></table>
-    <div class="tiny muted" id="decay" style="margin-top:10px"></div>
-  </div>
-</div><!-- /pane-water -->
-
-<div id="pane-log" class="hide">
-  <div class="card">
     <div class="tiny muted" style="margin-bottom:10px">Due</div>
     <div id="dueList"></div>
   </div>
 
   <div class="card">
-    <div class="tiny muted" style="margin-bottom:12px">Log something</div>
+    <div class="tiny muted" style="margin-bottom:12px">Log a treatment</div>
+    <div class="row" style="flex-wrap:wrap;gap:12px">
+      <div class="fld" style="flex:1 1 170px"><label>Product</label>
+        <select id="tSup"></select></div>
+      <div class="fld" style="max-width:150px"><label>Amount used</label>
+        <span style="display:flex;gap:6px;align-items:center">
+          <input type="number" id="tAmt" step="0.1" style="flex:1">
+          <span id="tUnit" class="tiny muted" style="min-width:26px"></span></span></div>
+      <div class="fld" style="max-width:190px"><label>When</label>
+        <input type="datetime-local" id="tWhen"></div>
+    </div>
+    <div class="row" style="flex-wrap:wrap;gap:12px;margin-top:12px">
+      <div class="fld" style="max-width:160px"><label>Strip read before (ppm, optional)</label>
+        <input type="number" id="tPpm" step="1" placeholder="e.g. 10"></div>
+      <div class="fld"><label>Note (optional)</label><input type="text" id="tNote"></div>
+    </div>
+    <div class="tiny muted" id="tHint" style="margin-top:10px"></div>
+    <div class="row" style="gap:8px;margin-top:12px">
+      <button class="pill" id="tSave">Log it</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tiny muted" style="margin-bottom:12px">Water events</div>
     <div class="row" style="flex-wrap:wrap;gap:8px">
-      <button class="pill" data-ev="treatment">Added treatment</button>
       <button class="pill" data-ev="refill">Drained &amp; refilled</button>
       <button class="pill" data-ev="filter">Cleaned filter</button>
+      <button class="pill" data-ev="reading">Test strip only</button>
       <button class="pill" data-ev="note">Note</button>
     </div>
     <div id="evForm" class="hide" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--rule)">
       <div class="row" style="flex-wrap:wrap;gap:12px">
-        <div class="fld" id="wrapSup"><label>Product</label>
-          <select id="evSup"></select></div>
-        <div class="fld" id="wrapAmt"><label>Amount used</label>
-          <input type="number" id="evAmt" step="0.1"></div>
         <div class="fld" id="wrapGal"><label>Gallons filled</label>
           <input type="number" id="evGal" step="1"></div>
-        <div class="fld"><label>When</label>
+        <div class="fld" id="wrapPpm"><label>Strip reads (ppm)</label>
+          <input type="number" id="evPpm" step="1"></div>
+        <div class="fld" style="max-width:190px"><label>When</label>
           <input type="datetime-local" id="evWhen"></div>
       </div>
       <div class="row" style="gap:12px;margin-top:12px">
@@ -190,25 +189,28 @@ td:last-child{text-align:right;color:var(--muted)}
     </div>
   </div>
 
+</div><!-- /pane-water -->
+
+<div id="pane-log" class="hide">
   <div class="card">
     <div class="between" style="margin-bottom:10px">
-      <div class="tiny muted">Supplies</div>
-      <button class="rowbtn" id="addSup">add</button>
+      <div class="tiny muted">Supplies on hand</div>
+      <button class="rowbtn" id="addSup">add product</button>
     </div>
     <div id="supList"></div>
     <div id="supForm" class="hide" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--rule)">
       <div class="row" style="flex-wrap:wrap;gap:12px">
         <div class="fld" style="flex:1 1 180px"><label>Product name</label>
           <input type="text" id="sName"></div>
-        <div class="fld" style="max-width:88px"><label>Unit</label>
-          <select id="sUnit"><option>oz</option><option>mL</option>
-            <option>g</option><option>tabs</option></select></div>
+        <div class="fld" style="max-width:96px"><label>Unit</label>
+          <select id="sUnit"><option value="oz">oz</option><option value="mL">mL</option>
+            <option value="g">g</option><option value="tabs">tabs</option></select></div>
         <div class="fld" style="max-width:110px"><label>Bottle size</label>
           <input type="number" id="sSize" step="0.5"></div>
         <div class="fld" style="max-width:110px"><label>Amount left</label>
           <input type="number" id="sOnHand" step="0.5"></div>
       </div>
-      <div class="tiny muted" style="margin:14px 0 8px">From the product label</div>
+      <div class="tiny muted" style="margin:14px 0 8px">From the product label — in the unit above</div>
       <div class="row" style="flex-wrap:wrap;gap:12px">
         <div class="fld"><label>First / shock dose per 100 gal</label>
           <input type="number" id="sInit" step="0.1"></div>
@@ -225,6 +227,23 @@ td:last-child{text-align:right;color:var(--muted)}
         <button class="pill" id="sCancel">Cancel</button>
         <button class="pill" id="sDelete" style="margin-left:auto;border-color:#6b3b3b;color:#c98a8a">Remove</button>
       </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tiny muted" style="margin-bottom:12px">Restock</div>
+    <div class="row" style="flex-wrap:wrap;gap:12px;align-items:flex-end">
+      <div class="fld" style="flex:1 1 170px"><label>Product</label>
+        <select id="rSup"></select></div>
+      <div class="fld" style="max-width:150px"><label>Amount added</label>
+        <span style="display:flex;gap:6px;align-items:center">
+          <input type="number" id="rAmt" step="0.5" style="flex:1">
+          <span id="rUnit" class="tiny muted" style="min-width:26px"></span></span></div>
+      <button class="pill" id="rSave">Add to inventory</button>
+    </div>
+    <div class="tiny muted" style="margin-top:10px">
+      Treatments are logged on the Water care tab and come off inventory
+      automatically. This is only for putting stock back in.
     </div>
   </div>
 
@@ -581,7 +600,8 @@ async function chart() {
 /* ---------------- event log, supplies, reminders ---------------- */
 var CARE = null;
 var KINDLABEL = { treatment: "Treatment", refill: "Drained & refilled",
-                  filter: "Cleaned filter", note: "Note", reading: "Test", dose: "Dose" };
+                  filter: "Cleaned filter", note: "Note", reading: "Strip test",
+                  restock: "Restocked", dose: "Dose" };
 
 function ago(ts) {
   var d = (Date.now() - new Date(ts)) / 864e5;
@@ -616,6 +636,8 @@ async function careLoad() {
       (d.reorder ? ' \u00b7 <span style="color:#d97b6c">reorder</span>' : '') +
       '</div></div></div>';
   }).join("");
+  fillSupSelects();
+  if (!$("tWhen").value) $("tWhen").value = localNow();
   $("dueList").innerHTML = due ||
     '<div class="tiny muted">No recurring treatments set up. Give a supply a dose rate and interval below.</div>';
 
@@ -636,8 +658,10 @@ async function careLoad() {
     var d = new Date(e.ts);
     var sup = CARE.supplies.find(function (x) { return x.id === e.supply_id; });
     var what = KINDLABEL[e.kind] || e.kind;
-    if (e.amount) what += " \u00b7 " + e.amount + " " + (sup ? sup.unit : "oz");
+    if (e.amount) what += " \u00b7 " + (e.kind === "restock" ? "+" : "\u2212") +
+      e.amount + " " + (sup ? sup.unit : "");
     if (e.kind === "refill" && e.value) what += " \u00b7 " + e.value + " gal";
+    if (e.kind === "reading" && e.value) what += " \u00b7 " + e.value + " ppm";
     if (sup) what += " \u00b7 " + sup.name;
     if (e.note) what += " \u00b7 " + e.note;
     return "<tr><td>" + d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
@@ -647,67 +671,104 @@ async function careLoad() {
   }).join("") || '<tr><td class="muted">Nothing logged yet</td><td></td></tr>';
 }
 
-/* ---- event form ---- */
-var EVKIND = null;
+/* ---- treatment form: the one place a treatment is entered ---- */
 var localNow = function (d) {
   d = d || new Date();
-  var o = d.getTimezoneOffset() * 60000;
-  return new Date(d - o).toISOString().slice(0, 16);
+  return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+var supById = function (id) {
+  return CARE.supplies.find(function (x) { return x.id === +id; });
 };
 
-function openEv(kind) {
-  EVKIND = kind;
-  $("evForm").className = "";
-  $("wrapSup").className = kind === "treatment" ? "fld" : "fld hide";
-  $("wrapAmt").className = kind === "treatment" ? "fld" : "fld hide";
-  $("wrapGal").className = kind === "refill" ? "fld" : "fld hide";
-  $("evWhen").value = localNow();
-  $("evNote").value = "";
-  if (kind === "treatment") {
-    $("evSup").innerHTML = CARE.supplies.map(function (s) {
-      return '<option value="' + s.id + '">' + s.name + '</option>';
-    }).join("");
-    evSuggest();
-  }
-  $("evHint").textContent = kind === "refill"
-    ? "This resets the tub volume and marks where the thermal model goes stale."
-    : kind === "treatment"
-      ? "Backdate it if you did this earlier - the reminder counts from when you did it."
-      : "";
+function fillSupSelects() {
+  var opts = CARE.supplies.map(function (s) {
+    return '<option value="' + s.id + '">' + s.name + '</option>';
+  }).join("");
+  $("tSup").innerHTML = opts;
+  $("rSup").innerHTML = opts;
+  tSupChanged(); rSupChanged();
 }
 
-function evSuggest() {
-  var s = CARE.supplies.find(function (x) { return x.id === +$("evSup").value; });
+function tSupChanged() {
+  var s = supById($("tSup").value);
   if (!s) return;
+  $("tUnit").textContent = s.unit;
   var d = CARE.due.find(function (x) { return x.supply_id === s.id; });
   if (d) {
     var amt = d.needs_initial ? d.first_dose : d.dose;
-    $("evAmt").value = amt;
-    $("evHint").textContent =
+    $("tAmt").value = amt;
+    $("tHint").textContent =
       (d.reset_by_refill ? "Shock dose " : d.needs_initial ? "First dose " : "Routine dose ") +
       amt + " " + s.unit + " for " + CARE.volume_gal + " gal" +
-      (d.reset_by_refill ? " - the water was changed since the last treatment." : ".") +
-      " Backdate if you did it earlier.";
-  } else { $("evAmt").value = ""; }
+      (d.reset_by_refill ? " — water was changed since the last treatment." : ".") +
+      " Comes off inventory automatically.";
+  } else {
+    $("tAmt").value = "";
+    $("tHint").textContent = "No label dose set for this product — add one under " +
+      "Log → Supplies and it will suggest the amount.";
+  }
 }
-$("evSup").onchange = evSuggest;
-$("evCancel").onclick = function () { $("evForm").className = "hide"; };
+function rSupChanged() {
+  var s = supById($("rSup").value);
+  if (s) $("rUnit").textContent = s.unit;
+}
+$("tSup").onchange = tSupChanged;
+$("rSup").onchange = rSupChanged;
 
+$("tSave").onclick = async function () {
+  var s = supById($("tSup").value);
+  if (!s || !$("tAmt").value) return alert("Pick a product and an amount");
+  var when = $("tWhen").value || localNow();
+  if ($("tPpm").value !== "") {
+    await api("addEvent", { kind: "reading", value: $("tPpm").value, ts: when,
+                            note: "before dosing" });
+  }
+  await api("addEvent", { kind: "treatment", supply_id: s.id, amount: $("tAmt").value,
+                          ts: when, note: $("tNote").value || "" });
+  $("tPpm").value = ""; $("tNote").value = "";
+  careLoad();
+};
+
+$("rSave").onclick = async function () {
+  var s = supById($("rSup").value);
+  if (!s || !$("rAmt").value) return alert("Pick a product and an amount");
+  await api("addEvent", { kind: "restock", supply_id: s.id, amount: $("rAmt").value,
+                          ts: localNow() });
+  $("rAmt").value = "";
+  careLoad();
+};
+
+/* ---- other water events ---- */
+var EVKIND = null;
+function openEv(kind) {
+  EVKIND = kind;
+  $("evForm").className = "";
+  $("wrapGal").className = kind === "refill" ? "fld" : "fld hide";
+  $("wrapPpm").className = kind === "reading" ? "fld" : "fld hide";
+  $("evWhen").value = localNow();
+  $("evNote").value = "";
+  if (kind === "refill") $("evGal").value = CARE.volume_gal;
+  $("evHint").textContent = kind === "refill"
+    ? "Resets the tub volume, restarts every treatment schedule at the shock dose, " +
+      "and marks where the thermal model goes stale."
+    : kind === "reading" ? "Just recording a strip reading, no product used."
+    : "";
+}
+$("evCancel").onclick = function () { $("evForm").className = "hide"; };
 $("evSave").onclick = async function () {
   var q = { kind: EVKIND, ts: $("evWhen").value };
-  if (EVKIND === "treatment") { q.supply_id = $("evSup").value; q.amount = $("evAmt").value; }
   if (EVKIND === "refill") q.value = $("evGal").value || CARE.volume_gal;
+  if (EVKIND === "reading") q.value = $("evPpm").value;
   if ($("evNote").value) q.note = $("evNote").value;
   await api("addEvent", q);
   $("evForm").className = "hide";
   careLoad();
 };
-
 document.querySelectorAll("[data-ev]").forEach(function (b) {
   b.onclick = function () { openEv(b.dataset.ev); };
 });
 
-/* ---- supply form ---- */
+/* ---- supplies ---- */
 var SUPID = null;
 function openSup(s) {
   SUPID = s ? s.id : null;
@@ -721,13 +782,12 @@ function openSup(s) {
   $("sIvl").value = s && s.interval_days !== null ? s.interval_days : "";
   $("sReorder").value = s ? (s.reorder_below || "") : "";
   $("sDelete").className = s ? "pill" : "pill hide";
-  $("sHint").textContent = "Leave the dose and interval blank for anything you " +
-    "do not use on a schedule. Doses are per 100 gallons - the app scales them " +
-    "to your " + CARE.volume_gal + " gal.";
+  $("sHint").textContent = "Doses are per 100 gallons in the unit above — the app " +
+    "scales them to your " + CARE.volume_gal + " gal. Leave dose and interval blank " +
+    "for anything you do not use on a schedule.";
 }
 $("sCancel").onclick = function () { $("supForm").className = "hide"; };
 $("addSup").onclick = function () { openSup(null); };
-
 $("sSave").onclick = async function () {
   var q = { name: $("sName").value || "Unnamed", unit: $("sUnit").value,
             container_size: $("sSize").value, on_hand: $("sOnHand").value,
@@ -735,25 +795,21 @@ $("sSave").onclick = async function () {
             interval_days: $("sIvl").value, reorder_below: $("sReorder").value };
   if (SUPID) { q.id = SUPID; await api("updateSupply", q); }
   else await api("addSupply", q);
-  $("supForm").className = "hide";
-  careLoad();
+  $("supForm").className = "hide"; careLoad();
 };
 $("sDelete").onclick = async function () {
-  if (!SUPID || !confirm("Remove this supply?")) return;
+  if (!SUPID || !confirm("Remove this product?")) return;
   await api("deleteSupply", { id: SUPID });
-  $("supForm").className = "hide";
-  careLoad();
+  $("supForm").className = "hide"; careLoad();
 };
 
 document.addEventListener("click", async function (e) {
   var t = e.target;
   if (t.dataset && t.dataset.evdel) {
-    if (!confirm("Delete this entry?")) return;
+    if (!confirm("Delete this entry? Inventory is not adjusted back.")) return;
     await api("deleteEvent", { id: t.dataset.evdel }); careLoad();
   }
-  if (t.dataset && t.dataset.sup) {
-    openSup(CARE.supplies.find(function (x) { return x.id === +t.dataset.sup; }));
-  }
+  if (t.dataset && t.dataset.sup) openSup(supById(t.dataset.sup));
 });
 
 /* ---------------- water care ---------------- */
@@ -902,7 +958,7 @@ document.querySelectorAll(".tab").forEach(function (b) {
     $("pane-log").className = b.dataset.tab === "log" ? "" : "hide";
     if (b.dataset.tab === "chiller") { $("pane-chiller").className = ""; }
     else { $("pane-chiller").className = "hide"; }
-    if (w && !WP.volume_gal) waterLoad();
+    if (w) { waterLoad(); careLoad(); }
     if (b.dataset.tab === "log") careLoad();
   };
 });
