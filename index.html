@@ -875,4 +875,19 @@ refresh(); chart();
 setInterval(refresh, 30000);
 setInterval(chart, 300000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(); chart(); } });
+
+/* tabs */
+document.querySelectorAll(".tab").forEach(function (b) {
+  b.onclick = function () {
+    var t = b.dataset.tab;
+    document.querySelectorAll(".tab").forEach(function (x) { x.dataset.on = "false"; });
+    b.dataset.on = "true";
+    $("pane-chiller").className = t === "chiller" ? "" : "hide";
+    $("pane-water").className   = t === "water"   ? "" : "hide";
+    $("pane-log").className     = t === "log"     ? "" : "hide";
+    if (t === "water") { waterLoad(); careLoad(); }
+    if (t === "log") careLoad();
+  };
+});
+waterLoad();
 </script></body></html>
