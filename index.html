@@ -93,7 +93,7 @@ td:last-child{text-align:right;color:var(--muted)}
     </div>
   </div>
   <svg id="spark" viewBox="0 0 340 176"></svg>
-  <div class="tiny muted" style="margin-top:6px">Drag to scroll, pinch to zoom.
+  <div class="tiny muted" style="margin-top:6px">Drag a finger across to read values, two fingers to pan and zoom.
     Dashed line is the model, projected forward and never corrected.</div>
 </div>
 
@@ -241,7 +241,7 @@ $("clear").onclick = async () => {
    a second - collapse it to its midpoint and the line through them is real.
    The dashed line is the model projected forward from the first crossing in
    view and never corrected, so the gap is the honest error. */
-var HIST = null, PAR = null, VIEW = null, SPAN = null;
+var HIST = null, PAR = null, VIEW = null, SPAN = null, CUR = null;
 
 function crossings(ev) {
   var STABLE = 120000, idx = [], out = [], i, n, a, b;
@@ -279,6 +279,48 @@ function fmtTick(d, span) {
     return (d.getMonth() + 1) + "/" + d.getDate();
   var h = d.getHours();
   return (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? "a" : "p");
+}
+
+/* nearest sample in a series to a given instant */
+function at(arr, t) {
+  if (!arr.length) return null;
+  var best = arr[0], bd = Math.abs(arr[0].t - t), i, d;
+  for (i = 1; i < arr.length; i++) {
+    d = Math.abs(arr[i].t - t);
+    if (d < bd) { bd = d; best = arr[i]; }
+  }
+  return bd < 45 * 60000 ? best : null;
+}
+
+function crosshair(act, pred, X, Y, a, b, span, W, H, T, B) {
+  if (CUR === null) return "";
+  var t = a + span * CUR;
+  if (t < a || t > b) return "";
+  var x = X(t), av = at(act, t), pv = at(pred, t);
+  if (!av) return "";
+  var lines = '<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + T +
+              '" y2="' + (H - B) + '" stroke="#7b99a8" stroke-width=".8" stroke-dasharray="2 3"/>' +
+              '<circle cx="' + x.toFixed(1) + '" cy="' + Y(av.v).toFixed(1) +
+              '" r="3.2" fill="#a8ecff"/>';
+  if (pv) lines += '<circle cx="' + x.toFixed(1) + '" cy="' + Y(pv.v).toFixed(1) +
+                   '" r="3" fill="none" stroke="#d99a4e" stroke-width="1.5"/>';
+
+  var d = new Date(t);
+  var l1 = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "  " +
+           d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  var l2 = "actual " + av.v.toFixed(1) + "\u00B0";
+  var l3 = pv ? "model  " + pv.v.toFixed(1) + "\u00B0" : "";
+  var l4 = pv ? (pv.v - av.v >= 0 ? "+" : "") + (pv.v - av.v).toFixed(1) + "\u00B0 off" : "";
+  var bw = 92, bh = pv ? 50 : 30;
+  var bx = x + 8 + bw > W ? x - bw - 8 : x + 8;
+  var by = T + 2;
+  return lines +
+    '<rect x="' + bx + '" y="' + by + '" width="' + bw + '" height="' + bh +
+    '" fill="#0c1a22" stroke="#22404f" rx="2" opacity=".95"/>' +
+    '<text x="' + (bx + 6) + '" y="' + (by + 12) + '" fill="#7b99a8" font-size="8.5">' + l1 + '</text>' +
+    '<text x="' + (bx + 6) + '" y="' + (by + 25) + '" fill="#a8ecff" font-size="10">' + l2 + '</text>' +
+    (pv ? '<text x="' + (bx + 6) + '" y="' + (by + 37) + '" fill="#d99a4e" font-size="10">' + l3 + '</text>' +
+          '<text x="' + (bx + 6) + '" y="' + (by + 47) + '" fill="#7b99a8" font-size="8.5">' + l4 + '</text>' : "");
 }
 
 function draw() {
@@ -348,7 +390,8 @@ function draw() {
     'stroke-linejoin="round" stroke-linecap="round"/>' +
     (tip.t >= a && tip.t <= b
       ? '<circle cx="' + X(tip.t).toFixed(1) + '" cy="' + Y(tip.v).toFixed(1) + '" r="3.5" fill="#a8ecff"/>'
-      : "");
+      : "") +
+    crosshair(act, pred, X, Y, a, b, span, W, H, T, B);
 
   var pv = pred.length ? pred[pred.length - 1].v : null;
   $("range").innerHTML = '<span style="color:#a8ecff">actual</span> ' + tip.v.toFixed(1) +
@@ -387,43 +430,64 @@ async function chart() {
   draw();
 }
 
-/* pan and zoom: drag to scroll, pinch to zoom, wheel on desktop */
+/* One finger scrubs the crosshair, two fingers pan and zoom. Keeping those
+   on separate gestures stops the readout fighting the pan - dragging the
+   chart under your own finger makes the numbers useless. */
 (function () {
-  var el = $("spark"), drag = null, pinch = null;
+  var el = $("spark"), pan = null, pinch = null;
+  var frac = function (clientX) {
+    var r = el.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  };
   var clamp = function () {
     var minSpan = 20 * 60000, maxSpan = SPAN[1] - SPAN[0] + 36e5;
-    var s = Math.min(maxSpan, Math.max(minSpan, VIEW[1] - VIEW[0]));
+    var sp = Math.min(maxSpan, Math.max(minSpan, VIEW[1] - VIEW[0]));
     var c = (VIEW[0] + VIEW[1]) / 2;
-    VIEW = [c - s / 2, c + s / 2];
-    if (VIEW[1] > SPAN[1] + 36e5) { VIEW = [SPAN[1] + 36e5 - s, SPAN[1] + 36e5]; }
-    if (VIEW[0] < SPAN[0] - 36e5) { VIEW = [SPAN[0] - 36e5, SPAN[0] - 36e5 + s]; }
+    VIEW = [c - sp / 2, c + sp / 2];
+    if (VIEW[1] > SPAN[1] + 36e5) VIEW = [SPAN[1] + 36e5 - sp, SPAN[1] + 36e5];
+    if (VIEW[0] < SPAN[0] - 36e5) VIEW = [SPAN[0] - 36e5, SPAN[0] - 36e5 + sp];
   };
-  var dist = function (t) {
-    return Math.abs(t[0].clientX - t[1].clientX);
-  };
+  var mid = function (t) { return (t[0].clientX + t[1].clientX) / 2; };
+  var dist = function (t) { return Math.abs(t[0].clientX - t[1].clientX); };
+
   el.addEventListener("touchstart", function (e) {
-    if (e.touches.length === 2) { pinch = { d: dist(e.touches), span: VIEW[1] - VIEW[0] }; drag = null; }
-    else if (e.touches.length === 1) { drag = { x: e.touches[0].clientX, v: VIEW.slice() }; }
+    if (e.touches.length === 2) {
+      pinch = { d: dist(e.touches), x: mid(e.touches), span: VIEW[1] - VIEW[0], v: VIEW.slice() };
+      pan = null; CUR = null; draw();
+    } else if (e.touches.length === 1) {
+      CUR = frac(e.touches[0].clientX); draw();
+    }
   }, { passive: true });
+
   el.addEventListener("touchmove", function (e) {
     if (!VIEW) return;
     if (pinch && e.touches.length === 2) {
       var r = dist(e.touches) / Math.max(1, pinch.d);
-      var c = (VIEW[0] + VIEW[1]) / 2, s = pinch.span / r;
-      VIEW = [c - s / 2, c + s / 2]; clamp(); draw();
-    } else if (drag && e.touches.length === 1) {
-      var dx = e.touches[0].clientX - drag.x;
-      var per = (drag.v[1] - drag.v[0]) / el.clientWidth;
-      VIEW = [drag.v[0] - dx * per, drag.v[1] - dx * per]; clamp(); draw();
+      var c = (VIEW[0] + VIEW[1]) / 2, sp = pinch.span / r;
+      VIEW = [c - sp / 2, c + sp / 2];
+      var per = sp / el.clientWidth, dx = mid(e.touches) - pinch.x;
+      VIEW = [VIEW[0] - dx * per, VIEW[1] - dx * per];
+      clamp(); draw();
+    } else if (e.touches.length === 1) {
+      CUR = frac(e.touches[0].clientX); draw();
     }
     e.preventDefault();
   }, { passive: false });
-  el.addEventListener("touchend", function () { pinch = null; drag = null; }, { passive: true });
+
+  el.addEventListener("touchend", function (e) {
+    pinch = null; pan = null;
+    if (!e.touches.length) { setTimeout(function () { CUR = null; draw(); }, 2500); }
+  }, { passive: true });
+
+  el.addEventListener("mousemove", function (e) { CUR = frac(e.clientX); draw(); });
+  el.addEventListener("mouseleave", function () { CUR = null; draw(); });
+
   el.addEventListener("wheel", function (e) {
     if (!VIEW) return;
-    var c = (VIEW[0] + VIEW[1]) / 2, s = (VIEW[1] - VIEW[0]) * (e.deltaY > 0 ? 1.25 : .8);
-    VIEW = [c - s / 2, c + s / 2]; clamp(); draw(); e.preventDefault();
+    var c = (VIEW[0] + VIEW[1]) / 2, sp = (VIEW[1] - VIEW[0]) * (e.deltaY > 0 ? 1.25 : .8);
+    VIEW = [c - sp / 2, c + sp / 2]; clamp(); draw(); e.preventDefault();
   }, { passive: false });
+
   document.addEventListener("click", function (e) {
     var h = e.target.getAttribute && e.target.getAttribute("data-h");
     if (!h || !SPAN) return;
