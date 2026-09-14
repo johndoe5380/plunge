@@ -55,6 +55,7 @@ td:last-child{text-align:right;color:var(--muted)}
 <div class="tabs">
   <button class="tab" data-tab="chiller" data-on="true">Chiller</button>
   <button class="tab" data-tab="water">Water care</button>
+  <button class="tab" data-tab="log">Log</button>
 </div>
 
 <div id="pane-chiller">
@@ -152,6 +153,36 @@ td:last-child{text-align:right;color:var(--muted)}
     <div class="tiny muted" id="decay" style="margin-top:10px"></div>
   </div>
 </div><!-- /pane-water -->
+
+<div id="pane-log" class="hide">
+  <div class="card">
+    <div class="tiny muted" style="margin-bottom:10px">Due</div>
+    <div id="dueList"></div>
+  </div>
+
+  <div class="card">
+    <div class="tiny muted" style="margin-bottom:12px">Log something</div>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="pill" data-ev="treatment">Added treatment</button>
+      <button class="pill" data-ev="refill">Drained &amp; refilled</button>
+      <button class="pill" data-ev="filter">Cleaned filter</button>
+      <button class="pill" data-ev="note">Note</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="between" style="margin-bottom:10px">
+      <div class="tiny muted">Supplies</div>
+      <button class="rowbtn" id="addSup">add</button>
+    </div>
+    <div id="supList"></div>
+  </div>
+
+  <div class="card">
+    <div class="tiny muted" style="margin-bottom:8px">History</div>
+    <table id="evLog"></table>
+  </div>
+</div><!-- /pane-log -->
 
 <div class="tiny muted" style="margin-top:16px" id="foot"></div>
 <script>
@@ -497,6 +528,131 @@ async function chart() {
   });
 })();
 
+/* ---------------- event log, supplies, reminders ---------------- */
+var CARE = null;
+var KINDLABEL = { treatment: "Treatment", refill: "Drained & refilled",
+                  filter: "Cleaned filter", note: "Note", reading: "Test", dose: "Dose" };
+
+function ago(ts) {
+  var d = (Date.now() - new Date(ts)) / 864e5;
+  if (d < 1) return Math.round(d * 24) + "h ago";
+  return Math.round(d) + "d ago";
+}
+
+async function careLoad() {
+  try { CARE = await api("care"); } catch (e) { return; }
+
+  // --- due list ---
+  var due = CARE.due.map(function (d) {
+    var never = !d.last_ts;
+    var over = d.days_overdue;
+    var colour = never ? "#d99a4e" : over > 0 ? "#d97b6c" : "#a8ecff";
+    var when = never ? "never done - first dose " + d.first_dose + " " + d.unit
+             : over > 0 ? "overdue by " + over + "d"
+             : "due in " + Math.abs(over) + "d";
+    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;' +
+      'border-top:1px solid var(--rule)">' +
+      '<div><div style="font-size:14px">' + d.name + '</div>' +
+      '<div class="tiny muted" style="margin-top:2px">' + d.dose + ' ' + d.unit +
+      ' every ' + d.interval_days + 'd' +
+      (d.last_ts ? ' \u00b7 last ' + ago(d.last_ts) : '') + '</div></div>' +
+      '<div style="text-align:right"><div style="font-size:12.5px;color:' + colour + '">' +
+      when + '</div>' +
+      '<div class="tiny muted" style="margin-top:2px">' +
+      (d.days_of_supply !== null ? d.uses_left + ' doses left' : '') +
+      (d.reorder ? ' \u00b7 <span style="color:#d97b6c">reorder</span>' : '') +
+      '</div></div></div>';
+  }).join("");
+  $("dueList").innerHTML = due ||
+    '<div class="tiny muted">No recurring treatments set up. Give a supply a dose rate and interval below.</div>';
+
+  // --- supplies ---
+  $("supList").innerHTML = CARE.supplies.map(function (s) {
+    var pct = s.container_size ? Math.min(100, s.on_hand / s.container_size * 100) : 0;
+    return '<div style="padding:10px 0;border-top:1px solid var(--rule)">' +
+      '<div class="between"><div style="font-size:14px">' + s.name + '</div>' +
+      '<div class="tiny muted">' + s.on_hand + ' / ' + (s.container_size || '?') + ' ' + s.unit +
+      '<button class="rowbtn" data-sup="' + s.id + '">edit</button></div></div>' +
+      '<div style="height:3px;background:#22404f;margin-top:7px">' +
+      '<div style="height:3px;width:' + pct.toFixed(0) + '%;background:' +
+      (pct < 20 ? '#d97b6c' : '#a8ecff') + '"></div></div></div>';
+  }).join("");
+
+  // --- history ---
+  $("evLog").innerHTML = CARE.events.slice(0, 20).map(function (e) {
+    var d = new Date(e.ts);
+    var sup = CARE.supplies.find(function (x) { return x.id === e.supply_id; });
+    var what = KINDLABEL[e.kind] || e.kind;
+    if (e.amount) what += " \u00b7 " + e.amount + " " + (sup ? sup.unit : "oz");
+    if (e.kind === "refill" && e.value) what += " \u00b7 " + e.value + " gal";
+    if (sup) what += " \u00b7 " + sup.name;
+    if (e.note) what += " \u00b7 " + e.note;
+    return "<tr><td>" + d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+      " " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) +
+      "</td><td style='text-align:right'>" + what +
+      "<button class='rowbtn' data-evdel='" + e.id + "'>&times;</button></td></tr>";
+  }).join("") || '<tr><td class="muted">Nothing logged yet</td><td></td></tr>';
+}
+
+/* quick-add buttons */
+document.querySelectorAll("[data-ev]").forEach(function (b) {
+  b.onclick = async function () {
+    var kind = b.dataset.ev, q = { kind: kind };
+    if (kind === "treatment") {
+      var opts = CARE.supplies.map(function (s, i) { return (i + 1) + ") " + s.name; }).join("\n");
+      var pick = prompt("Which supply?\n" + opts, "1");
+      if (pick === null) return;
+      var sup = CARE.supplies[+pick - 1];
+      if (!sup) return;
+      var sug = CARE.due.find(function (d) { return d.supply_id === sup.id; });
+      var amt = prompt("How much did you add? (" + sup.unit + ")",
+                       sug ? (sug.last_ts ? sug.dose : sug.first_dose) : "1");
+      if (amt === null || isNaN(+amt)) return;
+      q.supply_id = sup.id; q.amount = amt;
+    } else if (kind === "refill") {
+      var gal = prompt("How many gallons did you fill? This resets the tub volume, " +
+                       "and the thermal model refits from here.", CARE.volume_gal);
+      if (gal === null || isNaN(+gal)) return;
+      q.value = gal;
+    } else if (kind === "note") {
+      var n = prompt("Note");
+      if (!n) return;
+      q.note = n;
+    }
+    await api("addEvent", q);
+    careLoad();
+  };
+});
+
+$("addSup").onclick = async function () {
+  var n = prompt("Supply name");
+  if (!n) return;
+  var sz = prompt("Container size (oz)", "32");
+  await api("addSupply", { name: n, container_size: sz || 32, on_hand: sz || 32 });
+  careLoad();
+};
+
+document.addEventListener("click", async function (e) {
+  var t = e.target;
+  if (t.dataset && t.dataset.evdel) {
+    if (!confirm("Delete this entry?")) return;
+    await api("deleteEvent", { id: t.dataset.evdel }); careLoad();
+  }
+  if (t.dataset && t.dataset.sup) {
+    var s = CARE.supplies.find(function (x) { return x.id === +t.dataset.sup; });
+    var q = { id: s.id };
+    var oh = prompt("Amount left (" + s.unit + ")", s.on_hand); if (oh === null) return;
+    q.on_hand = oh;
+    var dr = prompt("Dose per 100 gallons (blank = not a recurring treatment)",
+                    s.dose_per_100gal === null ? "" : s.dose_per_100gal);
+    if (dr !== null && dr !== "") q.dose_per_100gal = dr;
+    var iv = prompt("Repeat every how many days?",
+                    s.interval_days === null ? "" : s.interval_days);
+    if (iv !== null && iv !== "") q.interval_days = iv;
+    await api("updateSupply", q); careLoad();
+  }
+});
+
 /* ---------------- water care ---------------- */
 /* mg of H2O2 per mL of stock, accounting for solution density - a 12%
    solution is 12% by weight and denser than water, so it is not 120 mg/mL */
@@ -640,7 +796,11 @@ document.querySelectorAll(".tab").forEach(function (b) {
     var w = b.dataset.tab === "water";
     $("pane-water").className = w ? "" : "hide";
     $("pane-chiller").className = w ? "hide" : "";
+    $("pane-log").className = b.dataset.tab === "log" ? "" : "hide";
+    if (b.dataset.tab === "chiller") { $("pane-chiller").className = ""; }
+    else { $("pane-chiller").className = "hide"; }
     if (w && !WP.volume_gal) waterLoad();
+    if (b.dataset.tab === "log") careLoad();
   };
 });
 waterLoad();
