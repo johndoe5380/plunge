@@ -594,18 +594,21 @@ async function careLoad() {
 
   // --- due list ---
   var due = CARE.due.map(function (d) {
-    var never = !d.last_ts;
     var over = d.days_overdue;
-    var colour = never ? "#d99a4e" : over > 0 ? "#d97b6c" : "#a8ecff";
-    var when = never ? "never done - first dose " + d.first_dose + " " + d.unit
-             : over > 0 ? "overdue by " + over + "d"
-             : "due in " + Math.abs(over) + "d";
+    var amt = d.needs_initial ? d.first_dose : d.dose;
+    var colour = d.needs_initial ? "#d99a4e" : over > 0 ? "#d97b6c" : "#a8ecff";
+    var when = d.reset_by_refill
+        ? "shock dose " + d.first_dose + " " + d.unit + " - fresh water"
+      : !d.last_ts ? "never done - first dose " + d.first_dose + " " + d.unit
+      : over > 0 ? "overdue by " + over + "d"
+      : "due in " + Math.abs(over) + "d";
     return '<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;' +
       'border-top:1px solid var(--rule)">' +
       '<div><div style="font-size:14px">' + d.name + '</div>' +
-      '<div class="tiny muted" style="margin-top:2px">' + d.dose + ' ' + d.unit +
+      '<div class="tiny muted" style="margin-top:2px">' + amt + ' ' + d.unit +
       ' every ' + d.interval_days + 'd' +
-      (d.last_ts ? ' \u00b7 last ' + ago(d.last_ts) : '') + '</div></div>' +
+      (d.reset_by_refill ? ' \u00b7 reset by refill' :
+       d.last_ts ? ' \u00b7 last ' + ago(d.last_ts) : '') + '</div></div>' +
       '<div style="text-align:right"><div style="font-size:12.5px;color:' + colour + '">' +
       when + '</div>' +
       '<div class="tiny muted" style="margin-top:2px">' +
@@ -678,10 +681,13 @@ function evSuggest() {
   if (!s) return;
   var d = CARE.due.find(function (x) { return x.supply_id === s.id; });
   if (d) {
-    $("evAmt").value = d.last_ts ? d.dose : d.first_dose;
-    $("evHint").textContent = (d.last_ts ? "Routine dose " : "First dose ") +
-      (d.last_ts ? d.dose : d.first_dose) + " " + s.unit + " for " +
-      CARE.volume_gal + " gal. Backdate if you did it earlier.";
+    var amt = d.needs_initial ? d.first_dose : d.dose;
+    $("evAmt").value = amt;
+    $("evHint").textContent =
+      (d.reset_by_refill ? "Shock dose " : d.needs_initial ? "First dose " : "Routine dose ") +
+      amt + " " + s.unit + " for " + CARE.volume_gal + " gal" +
+      (d.reset_by_refill ? " - the water was changed since the last treatment." : ".") +
+      " Backdate if you did it earlier.";
   } else { $("evAmt").value = ""; }
 }
 $("evSup").onchange = evSuggest;
