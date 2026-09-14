@@ -45,6 +45,9 @@ td:last-child{text-align:right;color:var(--muted)}
 .fld{flex:1 1 120px}
 .fld label{font-size:11.5px;color:var(--muted);display:block;margin-bottom:5px}
 .hide{display:none}
+.rowbtn{background:none;border:1px solid var(--rule);color:var(--muted);border-radius:2px;
+        font-size:10.5px;padding:2px 7px;margin-left:7px;cursor:pointer;font-family:inherit}
+.rowbtn:active{border-color:var(--ice);color:var(--ice)}
 .rng:active{border-color:var(--ice);color:var(--ice)}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px}
 </style></head><body>
@@ -486,13 +489,17 @@ async function waterHistory() {
   var rows;
   try { rows = await api("waterHistory"); } catch (e) { return; }
   var reads = rows.filter(function (r) { return r.code === "h2o2_ppm"; });
-  var html = rows.slice(0, 10).map(function (r) {
+  var html = rows.slice(0, 12).map(function (r) {
     var d = new Date(r.ts);
     var what = r.code === "h2o2_ppm" ? "tested " + r.value + " ppm"
                                      : "added " + r.value + " oz";
     return "<tr><td>" + d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
            " " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) +
-           "</td><td>" + what + "</td></tr>";
+           "</td><td style='text-align:right'>" + what +
+           "<button class='rowbtn' data-ts='" + r.ts + "' data-code='" + r.code +
+           "' data-val='" + r.value + "' data-act='edit'>edit</button>" +
+           "<button class='rowbtn' data-ts='" + r.ts + "' data-code='" + r.code +
+           "' data-act='del'>&times;</button></td></tr>";
   }).join("");
   $("wlog").innerHTML = html || '<tr><td class="muted">Nothing logged yet</td><td></td></tr>';
 
@@ -519,6 +526,22 @@ async function waterHistory() {
     $("decay").textContent = "Log a few readings over a week and this works out your decay rate.";
   }
 }
+
+$("wlog").addEventListener("click", async function (e) {
+  var b = e.target;
+  if (!b.classList || !b.classList.contains("rowbtn")) return;
+  var ts = b.dataset.ts, code = b.dataset.code;
+  if (b.dataset.act === "del") {
+    if (!confirm("Delete this entry?")) return;
+    await api("deleteWater", { ts: ts, code: code });
+  } else {
+    var unit = code === "h2o2_ppm" ? "ppm" : "oz";
+    var v = prompt("New value (" + unit + ")", b.dataset.val);
+    if (v === null || v === "" || isNaN(+v)) return;
+    await api("editWater", { ts: ts, code: code, value: v });
+  }
+  waterHistory();
+});
 
 $("calc").onclick = showDose;
 ["vol","pct","tgt","ppm"].forEach(function (id) {
