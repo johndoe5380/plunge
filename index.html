@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0c1a22">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Plunge</title>
+<style>
+:root{--ground:#0c1a22;--panel:#132530;--rule:#22404f;--ice:#a8ecff;
+      --deep:#3d6b7d;--amber:#d99a4e;--red:#d97b6c;--text:#dbeaf1;--muted:#7b99a8}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ground);color:var(--text);font-feature-settings:"tnum" 1;
+     font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+     padding:max(18px,env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom))}
+.muted{color:var(--muted)}
+.card{background:var(--panel);border:1px solid var(--rule);padding:16px;margin-top:12px}
+.temp{font-size:84px;font-weight:200;line-height:1;letter-spacing:-.03em;color:var(--ice)}
+.temp.warm{color:var(--deep)}
+.unit{font-size:26px;color:var(--muted);margin-left:4px}
+.row{display:flex;align-items:center;gap:14px}
+.between{display:flex;justify-content:space-between;align-items:center;gap:12px}
+button{font-family:inherit;color:var(--text);background:transparent;
+       border:1px solid var(--rule);border-radius:2px;cursor:pointer}
+button:active{background:rgba(168,236,255,.12)}
+button:disabled{opacity:.35}
+.step{width:76px;height:76px;font-size:32px;font-weight:300}
+.set{font-size:46px;font-weight:200;min-width:110px;text-align:center;letter-spacing:-.02em}
+.set.dirty{color:var(--amber)}
+.pill{padding:11px 20px;font-size:15px}
+.pill.on{border-color:var(--ice);color:var(--ice)}
+.tiny{font-size:12px;line-height:1.55}
+input,select{font-family:inherit;background:var(--ground);color:var(--text);
+             border:1px solid var(--rule);border-radius:2px;padding:9px;font-size:15px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+td{padding:8px 0;border-top:1px solid var(--rule)}
+td:last-child{text-align:right;color:var(--muted)}
+#spark{width:100%;height:112px;display:block}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px}
+</style></head><body>
+
+<div class="between">
+  <div>
+    <div class="tiny muted">Water</div>
+    <div><span class="temp" id="cur">--</span><span class="unit">&deg;F</span></div>
+  </div>
+  <div style="text-align:right">
+    <div id="state" style="font-size:16px"><span class="dot" id="dot"></span><span id="stateTxt">…</span></div>
+    <div class="tiny muted" id="sub" style="margin-top:6px;max-width:170px"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="tiny muted" style="margin-bottom:12px">Target</div>
+  <div class="between">
+    <div class="row">
+      <button class="step" id="minus">&minus;</button>
+      <div class="set" id="set">--</div>
+      <button class="step" id="plus">+</button>
+    </div>
+    <button class="pill" id="power">&nbsp;</button>
+  </div>
+  <div class="tiny muted" id="writeMsg" style="margin-top:12px;min-height:17px"></div>
+</div>
+
+<div class="card">
+  <div class="between" style="margin-bottom:6px">
+    <div class="tiny muted">Last 12 hours</div>
+    <div class="tiny muted" id="range"></div>
+  </div>
+  <svg id="spark" viewBox="0 0 320 112" preserveAspectRatio="none"></svg>
+</div>
+
+<div class="card">
+  <div class="between"><div class="tiny muted">Scheduled changes</div>
+    <button class="tiny" style="padding:6px 11px" id="clear">Clear all</button></div>
+  <table id="timers"></table>
+  <div class="row" style="margin-top:14px;flex-wrap:wrap">
+    <input type="date" id="d" style="flex:1 1 140px">
+    <input type="time" id="t" style="flex:1 1 104px">
+    <input type="number" id="v" min="36" max="122" value="48" style="width:78px">
+    <button class="pill" id="add" style="flex:1 1 92px">Add</button>
+  </div>
+  <div class="tiny muted" style="margin-top:10px">
+    Sets the target at that time. The compressor only restarts once the water is
+    5&deg;F above target, so it stops where you send it rather than overshooting.
+  </div>
+</div>
+
+<div class="tiny muted" style="margin-top:16px" id="foot"></div>
+<script>
+const K = new URLSearchParams(location.search).get("k") || "";
+const BASE = "https://cpufqbelfhkofymcpicn.supabase.co/functions/v1/app";
+const api = (a, p = {}) =>
+  fetch(BASE + "?" + new URLSearchParams({ k: K, action: a, ...p })).then(r => r.json());
+const $ = id => document.getElementById(id);
+
+let dev = null, pending = null, timer = null, busy = false;
+
+function paint() {
+  if (!dev) return;
+  const cur = dev.temp_current_f, set = pending ?? dev.temp_set_f;
+  $("cur").textContent = cur;
+  $("cur").className = "temp" + (cur > 55 ? " warm" : "");
+  $("set").textContent = set + "\u00B0";
+  $("set").className = "set" + (pending !== null && pending !== dev.temp_set_f ? " dirty" : "");
+  $("power").textContent = dev.switch ? "On" : "Off";
+  $("power").className = "pill" + (dev.switch ? " on" : "");
+
+  const cooling = dev.switch && cur > dev.temp_set_f;
+  $("dot").style.background = !dev.switch ? "var(--muted)" : cooling ? "var(--ice)" : "var(--deep)";
+  $("stateTxt").textContent = !dev.switch ? "Off" : cooling ? "Cooling" : "Coasting";
+  $("sub").textContent = !dev.switch ? "Pump and filter are off too"
+    : cooling ? "Running until it reaches " + dev.temp_set_f + "\u00B0"
+    : "Restarts at " + (dev.temp_set_f + 5) + "\u00B0";
+  if (dev.fault) { $("sub").textContent = "FAULT code " + dev.fault; $("sub").style.color = "var(--red)"; }
+
+  const rows = (dev.timers || []).map(t => {
+    const d = t.date.slice(4, 6) + "/" + t.date.slice(6, 8);
+    return "<tr><td>" + d + " " + t.time + "</td><td>set " + t.value + "\u00B0</td></tr>";
+  }).join("");
+  $("timers").innerHTML = rows || "<tr><td class='muted'>Nothing scheduled</td><td></td></tr>";
+  $("foot").textContent = "Updated " + new Date(dev.at).toLocaleTimeString();
+}
+
+async function refresh() {
+  try { dev = await api("state"); if (pending === null) pending = dev.temp_set_f; paint(); }
+  catch (e) { $("foot").textContent = "Offline — " + e; }
+}
+
+/* one command per intent: collect taps, send once you stop */
+function nudge(d) {
+  pending = Math.max(36, Math.min(122, (pending ?? dev.temp_set_f) + d));
+  paint();
+  $("writeMsg").textContent = "\u2026";
+  clearTimeout(timer);
+  timer = setTimeout(async () => {
+    busy = true; $("writeMsg").textContent = "Sending " + pending + "\u00B0\u2026";
+    try {
+      dev = await api("set", { f: pending });
+      $("writeMsg").textContent = dev.temp_set_f === pending
+        ? "Chiller confirmed " + pending + "\u00B0"
+        : "Chiller reports " + dev.temp_set_f + "\u00B0";
+      pending = dev.temp_set_f; paint();
+    } catch (e) { $("writeMsg").textContent = "Failed: " + e; }
+    busy = false;
+    setTimeout(() => { if (!busy) $("writeMsg").textContent = ""; }, 4000);
+  }, 800);
+}
+$("minus").onclick = () => nudge(-1);
+$("plus").onclick = () => nudge(1);
+
+$("power").onclick = async () => {
+  if (dev.switch && !confirm("Turn the chiller off? Filtration stops too.")) return;
+  $("writeMsg").textContent = "Sending\u2026";
+  dev = await api("power", { on: dev.switch ? "0" : "1" });
+  pending = dev.temp_set_f; paint();
+  $("writeMsg").textContent = "Chiller is " + (dev.switch ? "on" : "off");
+};
+
+$("add").onclick = async () => {
+  const d = $("d").value, t = $("t").value, v = $("v").value;
+  if (!d || !t) return alert("Pick a date and time");
+  await api("addTimer", { date: d.replaceAll("-", ""), time: t, f: v });
+  refresh();
+};
+$("clear").onclick = async () => {
+  if (!confirm("Remove all scheduled changes?")) return;
+  await api("clearTimers"); refresh();
+};
+
+/* step chart: the sensor only reports whole degrees, so draw it as steps
+   rather than a smooth line that implies precision it does not have */
+async function chart() {
+  let ev;
+  try { ev = await api("history", { h: 12 }); } catch { return; }
+  const temps = ev.filter(e => e.c === "temp_current_f");
+  if (temps.length < 2) return;
+  const t0 = temps[0].t, t1 = Date.now();
+  const vs = temps.map(e => e.v);
+  const lo = Math.min(...vs) - 1, hi = Math.max(...vs) + 1;
+  const X = t => 2 + 316 * (t - t0) / Math.max(1, t1 - t0);
+  const Y = v => 104 - 96 * (v - lo) / Math.max(1, hi - lo);
+
+  let d = "M" + X(temps[0].t) + " " + Y(temps[0].v);
+  for (let i = 1; i < temps.length; i++)
+    d += " L" + X(temps[i].t) + " " + Y(temps[i - 1].v) +
+         " L" + X(temps[i].t) + " " + Y(temps[i].v);
+  d += " L" + X(t1) + " " + Y(temps[temps.length - 1].v);
+
+  const gridline = v =>
+    '<line x1="2" x2="318" y1="' + Y(v) + '" y2="' + Y(v) +
+    '" stroke="#22404f" stroke-dasharray="1 4"/>' +
+    '<text x="4" y="' + (Y(v) - 3) + '" fill="#7b99a8" font-size="8">' + v + '\u00B0</text>';
+
+  $("spark").innerHTML =
+    gridline(Math.ceil(lo)) + gridline(Math.floor(hi)) +
+    '<path d="' + d + '" fill="none" stroke="#a8ecff" stroke-width="2"/>';
+  $("range").textContent = new Date(t0).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) +
+    " \u2013 now";
+}
+
+const today = new Date();
+$("d").value = today.toISOString().slice(0, 10);
+refresh(); chart();
+setInterval(refresh, 30000);
+setInterval(chart, 300000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(); chart(); } });
+</script></body></html>
