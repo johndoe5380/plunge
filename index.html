@@ -212,10 +212,24 @@ td:last-child{text-align:right;color:var(--muted)}
       </div>
       <div class="tiny muted" style="margin:14px 0 8px">From the product label — in the unit above</div>
       <div class="row" style="flex-wrap:wrap;gap:12px">
-        <div class="fld"><label>First / shock dose per 100 gal</label>
-          <input type="number" id="sInit" step="0.1"></div>
-        <div class="fld"><label>Routine dose per 100 gal</label>
-          <input type="number" id="sDose" step="0.1"></div>
+        <div class="fld" style="flex:1 1 230px"><label>First / shock dose</label>
+          <span style="display:flex;gap:6px;align-items:center">
+            <input type="number" id="sInit" step="0.01" style="width:64px">
+            <span class="tiny muted dunit"></span>
+            <span class="tiny muted">per</span>
+            <input type="number" id="sInitQty" step="1" value="100" style="width:58px">
+            <select id="sInitBasis" style="width:82px">
+              <option value="gal">gallons</option><option value="L">litres</option>
+            </select></span></div>
+        <div class="fld" style="flex:1 1 230px"><label>Routine dose</label>
+          <span style="display:flex;gap:6px;align-items:center">
+            <input type="number" id="sDose" step="0.01" style="width:64px">
+            <span class="tiny muted dunit"></span>
+            <span class="tiny muted">per</span>
+            <input type="number" id="sDoseQty" step="1" value="100" style="width:58px">
+            <select id="sDoseBasis" style="width:82px">
+              <option value="gal">gallons</option><option value="L">litres</option>
+            </select></span></div>
         <div class="fld" style="max-width:110px"><label>Repeat every (days)</label>
           <input type="number" id="sIvl" step="1"></div>
         <div class="fld" style="max-width:110px"><label>Reorder below</label>
@@ -770,6 +784,20 @@ document.querySelectorAll("[data-ev]").forEach(function (b) {
 
 /* ---- supplies ---- */
 var SUPID = null;
+/* Labels are written every which way - 1 oz per 100 gal, 5 mL per litre,
+   2 oz per 50 gal. Take it as written and normalise to per-100-gallons,
+   which is what the rest of the app works in. */
+function toPer100Gal(value, qty, basis) {
+  if (value === "" || !qty) return "";
+  var gallons = basis === "L" ? qty / L_PER_GAL : qty;
+  return +(Number(value) * 100 / gallons).toFixed(4);
+}
+function syncDoseUnits() {
+  var u = $("sUnit").value;
+  document.querySelectorAll(".dunit").forEach(function (e) { e.textContent = u; });
+}
+$("sUnit").onchange = syncDoseUnits;
+
 function openSup(s) {
   SUPID = s ? s.id : null;
   $("supForm").className = "";
@@ -777,21 +805,27 @@ function openSup(s) {
   $("sUnit").value = s ? s.unit : "oz";
   $("sSize").value = s ? (s.container_size || "") : "";
   $("sOnHand").value = s ? s.on_hand : "";
+  // stored per 100 gallons, so show it that way on reopen
+  $("sInitQty").value = 100; $("sInitBasis").value = "gal";
+  $("sDoseQty").value = 100; $("sDoseBasis").value = "gal";
+  syncDoseUnits();
   $("sInit").value = s && s.initial_per_100gal !== null ? s.initial_per_100gal : "";
   $("sDose").value = s && s.dose_per_100gal !== null ? s.dose_per_100gal : "";
   $("sIvl").value = s && s.interval_days !== null ? s.interval_days : "";
   $("sReorder").value = s ? (s.reorder_below || "") : "";
   $("sDelete").className = s ? "pill" : "pill hide";
-  $("sHint").textContent = "Doses are per 100 gallons in the unit above — the app " +
-    "scales them to your " + CARE.volume_gal + " gal. Leave dose and interval blank " +
-    "for anything you do not use on a schedule.";
+  $("sHint").textContent = "Enter the rate exactly as the label states it — any " +
+    "amount, per any number of gallons or litres. The app converts and scales it " +
+    "to your " + CARE.volume_gal + " gal. Leave dose and interval blank for " +
+    "anything you do not use on a schedule.";
 }
 $("sCancel").onclick = function () { $("supForm").className = "hide"; };
 $("addSup").onclick = function () { openSup(null); };
 $("sSave").onclick = async function () {
   var q = { name: $("sName").value || "Unnamed", unit: $("sUnit").value,
             container_size: $("sSize").value, on_hand: $("sOnHand").value,
-            initial_per_100gal: $("sInit").value, dose_per_100gal: $("sDose").value,
+            initial_per_100gal: toPer100Gal($("sInit").value, +$("sInitQty").value, $("sInitBasis").value),
+            dose_per_100gal: toPer100Gal($("sDose").value, +$("sDoseQty").value, $("sDoseBasis").value),
             interval_days: $("sIvl").value, reorder_below: $("sReorder").value };
   if (SUPID) { q.id = SUPID; await api("updateSupply", q); }
   else await api("addSupply", q);
@@ -812,157 +846,28 @@ document.addEventListener("click", async function (e) {
   if (t.dataset && t.dataset.sup) openSup(supById(t.dataset.sup));
 });
 
-/* ---------------- water care ---------------- */
-/* mg of H2O2 per mL of stock, accounting for solution density - a 12%
-   solution is 12% by weight and denser than water, so it is not 120 mg/mL */
-var STOCK = { 3: 30.3, 6: 61.3, 12: 125.2, 27: 297.8, 35: 395.5 };
-var L_PER_GAL = 3.785411784, ML_PER_OZ = 29.5735;
+/* ---------------- tub config ---------------- */
+var L_PER_GAL = 3.785411784;
 var WP = {};
-
-function doseCalc(gal, pct, now, target) {
-  var litres = gal * L_PER_GAL;
-  var deficit = Math.max(0, target - now);
-  var mg = litres * deficit;
-  var ml = mg / STOCK[pct];
-  return { litres: litres, deficit: deficit, mg: mg, ml: ml, oz: ml / ML_PER_OZ };
-}
-
-function showDose() {
-  var gal = +$("vol").value, pct = +$("pct").value;
-  var now = +$("ppm").value, tgt = +$("tgt").value;
-  if (!gal || !pct) return;
-  var d = doseCalc(gal, pct, now, tgt);
-  if (d.deficit <= 0) {
-    $("doseOut").innerHTML = '<div style="color:#a8ecff;font-size:15px">' +
-      'Already at or above ' + tgt + ' ppm. Nothing to add.</div>';
-    return;
-  }
-  $("doseOut").innerHTML =
-    '<div class="big">' + d.oz.toFixed(1) +
-    '<span style="font-size:16px;color:#7b99a8;margin-left:6px">fl oz</span>' +
-    '<span style="font-size:14px;color:#7b99a8;margin-left:12px">(' +
-    Math.round(d.ml) + ' mL)</span></div>' +
-    '<div class="tiny muted" style="margin-top:8px;line-height:1.6">of ' + pct +
-    '% raises ' + gal + ' gal from ' + now + ' to ' + tgt + ' ppm. Pump running, lid off, ' +
-    'and give it 15 minutes before you get in.' +
-    (pct >= 12 ? ' Gloves - ' + pct + '% bleaches skin on contact.' : '') + '</div>';
-}
-
-/* The dose is also a volume measurement: if you know the mg added and see
-   the ppm it produced, volume falls straight out. */
-function volumeFromRise(mg, rise) { return mg / rise / L_PER_GAL; }
 
 async function waterLoad() {
   try { WP = await api("params"); } catch (e) { return; }
   if (WP.volume_gal) $("vol").value = WP.volume_gal;
   if (WP.h2o2_stock_pct) $("pct").value = WP.h2o2_stock_pct;
-  $("tgt").value = WP.h2o2_target_ppm || 60;
-  $("volNote").textContent = (WP.volume_gal || 100) + " gal = " +
-    Math.round((WP.volume_gal || 100) * L_PER_GAL) + " litres. " +
-    "Dose, wait 15 min, retest - the rise tells you the real volume.";
-  showDose();
-  waterHistory();
+  $("tgt").value = WP.h2o2_target_ppm || 50;
+  var gal = WP.volume_gal || 100;
+  $("volNote").textContent = gal + " gal = " + Math.round(gal * L_PER_GAL) +
+    " litres" + (WP.gal_per_inch ? " \u00b7 " + WP.gal_per_inch +
+    " gal per inch of depth" : "") + ". Every dose in the app scales to this.";
 }
 
-async function waterHistory() {
-  var rows;
-  try { rows = await api("waterHistory"); } catch (e) { return; }
-  var reads = rows.filter(function (r) { return r.code === "h2o2_ppm"; });
-  var html = rows.slice(0, 12).map(function (r) {
-    var d = new Date(r.ts);
-    var what = r.code === "h2o2_ppm" ? "tested " + r.value + " ppm"
-                                     : "added " + r.value + " oz";
-    return "<tr><td>" + d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
-           " " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) +
-           "</td><td style='text-align:right'>" + what +
-           "<button class='rowbtn' data-ts='" + r.ts + "' data-code='" + r.code +
-           "' data-val='" + r.value + "' data-act='edit'>edit</button>" +
-           "<button class='rowbtn' data-ts='" + r.ts + "' data-code='" + r.code +
-           "' data-act='del'>&times;</button></td></tr>";
-  }).join("");
-  $("wlog").innerHTML = html || '<tr><td class="muted">Nothing logged yet</td><td></td></tr>';
-
-  // decay rate between consecutive readings with no dose in between
-  var r2 = reads.slice().sort(function (a, b) { return new Date(a.ts) - new Date(b.ts); });
-  var rates = [];
-  for (var i = 1; i < r2.length; i++) {
-    var days = (new Date(r2[i].ts) - new Date(r2[i - 1].ts)) / 864e5;
-    var drop = +r2[i - 1].value - +r2[i].value;
-    var dosed = rows.some(function (x) {
-      return x.code === "h2o2_dose_oz" &&
-             new Date(x.ts) > new Date(r2[i - 1].ts) && new Date(x.ts) < new Date(r2[i].ts);
-    });
-    if (days > 0.2 && drop > 0 && !dosed) rates.push(drop / days);
-  }
-  if (rates.length) {
-    var mean = rates.reduce(function (a, b) { return a + b; }, 0) / rates.length;
-    var floorPpm = WP.h2o2_min_ppm || 30;
-    var left = Math.max(0, (+$("ppm").value - floorPpm) / mean);
-    $("decay").innerHTML = "Falling about <span style='color:#dbeaf1'>" + mean.toFixed(1) +
-      " ppm a day</span> - you would reach " + floorPpm + " ppm in roughly " +
-      left.toFixed(1) + " days.";
-  } else {
-    $("decay").textContent = "Log a few readings over a week and this works out your decay rate.";
-  }
-}
-
-$("wlog").addEventListener("click", async function (e) {
-  var b = e.target;
-  if (!b.classList || !b.classList.contains("rowbtn")) return;
-  var ts = b.dataset.ts, code = b.dataset.code;
-  if (b.dataset.act === "del") {
-    if (!confirm("Delete this entry?")) return;
-    await api("deleteWater", { ts: ts, code: code });
-  } else {
-    var unit = code === "h2o2_ppm" ? "ppm" : "oz";
-    var v = prompt("New value (" + unit + ")", b.dataset.val);
-    if (v === null || v === "" || isNaN(+v)) return;
-    await api("editWater", { ts: ts, code: code, value: v });
-  }
-  waterHistory();
-});
-
-$("calc").onclick = showDose;
-["vol","pct","tgt","ppm"].forEach(function (id) {
+["vol", "pct", "tgt"].forEach(function (id) {
   $(id).addEventListener("change", function () {
-    showDose();
-    if (id === "vol" || id === "pct" || id === "tgt") {
-      var map = { vol: "volume_gal", pct: "h2o2_stock_pct", tgt: "h2o2_target_ppm" };
-      api("setParam", { key: map[id], value: $(id).value, source: "set in app" });
-    }
+    var map = { vol: "volume_gal", pct: "h2o2_stock_pct", tgt: "h2o2_target_ppm" };
+    api("setParam", { key: map[id], value: $(id).value, source: "set in app" })
+      .then(function () { waterLoad(); careLoad(); });
   });
 });
-
-$("logRead").onclick = async function () {
-  await api("logWater", { code: "h2o2_ppm", value: $("ppm").value });
-  waterHistory();
-};
-$("logDose").onclick = async function () {
-  var gal = +$("vol").value, pct = +$("pct").value;
-  var d = doseCalc(gal, pct, +$("ppm").value, +$("tgt").value);
-  await api("logWater", { code: "h2o2_dose_oz", value: d.oz.toFixed(2) });
-  $("decay").textContent = "Logged. Retest in 15 min - if it reads X, your tub is " +
-    "about " + Math.round(volumeFromRise(d.mg, d.deficit)) + " gal at target, " +
-    "or scale: volume = " + Math.round(d.mg) + " mg / (rise in ppm) / 3.785.";
-  waterHistory();
-};
-
-/* tabs */
-document.querySelectorAll(".tab").forEach(function (b) {
-  b.onclick = function () {
-    document.querySelectorAll(".tab").forEach(function (x) { x.dataset.on = "false"; });
-    b.dataset.on = "true";
-    var w = b.dataset.tab === "water";
-    $("pane-water").className = w ? "" : "hide";
-    $("pane-chiller").className = w ? "hide" : "";
-    $("pane-log").className = b.dataset.tab === "log" ? "" : "hide";
-    if (b.dataset.tab === "chiller") { $("pane-chiller").className = ""; }
-    else { $("pane-chiller").className = "hide"; }
-    if (w) { waterLoad(); careLoad(); }
-    if (b.dataset.tab === "log") careLoad();
-  };
-});
-waterLoad();
 
 const today = new Date();
 $("d").value = today.toISOString().slice(0, 10);
