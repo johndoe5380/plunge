@@ -70,6 +70,23 @@ td:last-child{text-align:right;color:var(--muted)}
   </div>
 </div>
 
+<div class="card hide" id="probeCard">
+  <div class="row" style="gap:26px;flex-wrap:wrap;align-items:flex-end">
+    <div>
+      <div class="tiny muted">Tub</div>
+      <div id="pTub" style="font-size:34px;font-weight:200;letter-spacing:-.02em;color:var(--ice)">--</div>
+    </div>
+    <div>
+      <div class="tiny muted">Room</div>
+      <div id="pAmb" style="font-size:34px;font-weight:200;letter-spacing:-.02em;color:var(--deep)">--</div>
+    </div>
+    <div style="flex:1 1 150px">
+      <div class="tiny muted" id="pOffset"></div>
+      <div class="tiny muted" id="pAge" style="margin-top:4px"></div>
+    </div>
+  </div>
+</div>
+
 <div class="card">
   <div class="tiny muted" style="margin-bottom:12px">Target</div>
   <div class="between">
@@ -344,6 +361,27 @@ function paint() {
     return "<tr><td>" + d + " " + t.time + "</td><td>set " + t.value + "\u00B0</td></tr>";
   }).join("");
   $("timers").innerHTML = rows || "<tr><td class='muted'>Nothing scheduled</td><td></td></tr>";
+  var pr = dev.probes;
+  if (pr && pr.tub !== null && pr.age_min !== null && pr.age_min < 10) {
+    $("probeCard").className = "card";
+    $("pTub").textContent = pr.tub.toFixed(1) + "\u00B0";
+    $("pAmb").textContent = pr.ambient === null ? "--" : pr.ambient.toFixed(1) + "\u00B0";
+    // the chiller reports whole degrees, so its true value is within half a
+    // degree of what it says - quote the offset as a band, not a point
+    var d = cur - pr.tub;
+    $("pOffset").innerHTML = "chiller reads <span style='color:" +
+      (Math.abs(d) < 1 ? "#a8ecff" : "#d99a4e") + "'>" +
+      (d >= 0 ? "+" : "") + d.toFixed(1) + "\u00B0</span> vs the tub" +
+      (Math.abs(d) < 1 ? "" : " \u00b1 0.5");
+    $("pAge").textContent = pr.age_min < 2 ? "probes live"
+      : "probes " + pr.age_min.toFixed(0) + " min old";
+  } else if (pr && pr.age_min !== null) {
+    $("probeCard").className = "card";
+    $("pAge").textContent = "probe board last reported " + pr.age_min.toFixed(0) + " min ago";
+    $("pOffset").textContent = "";
+  } else {
+    $("probeCard").className = "card hide";
+  }
   $("foot").textContent = "Updated " + new Date(dev.at).toLocaleTimeString();
 }
 
