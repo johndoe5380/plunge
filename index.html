@@ -362,8 +362,20 @@ function paint() {
   if (dev.fault) { $("sub").textContent = "FAULT code " + dev.fault; $("sub").style.color = "var(--red)"; }
 
   const rows = (dev.timers || []).map(t => {
-    const d = t.date.slice(4, 6) + "/" + t.date.slice(6, 8);
-    return "<tr><td>" + d + " " + t.time + "</td><td>set " + t.value + "\u00B0</td></tr>";
+    // Repeating timers carry date "00000000" and put the schedule in loops
+    // (one char per day, Sunday first). Only one-shot timers have a real date.
+    const L = t.loops || "0000000";
+    const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    let when;
+    if (L === "1111111") when = "Daily";
+    else if (L.indexOf("1") === -1)
+      when = t.date && t.date !== "00000000"
+        ? t.date.slice(4, 6) + "/" + t.date.slice(6, 8)
+        : "Once";
+    else if (L === "0111110") when = "Weekdays";
+    else if (L === "1000001") when = "Weekends";
+    else when = days.filter((_, i) => L[i] === "1").map(d => d.slice(0, 2)).join(" ");
+    return "<tr><td>" + when + " " + t.time + "</td><td>set " + t.value + "\u00B0</td></tr>";
   }).join("");
   $("timers").innerHTML = rows || "<tr><td class='muted'>Nothing scheduled</td><td></td></tr>";
   var pr = dev.probes;
