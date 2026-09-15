@@ -120,7 +120,12 @@ td:last-child{text-align:right;color:var(--muted)}
 
 <div class="card">
   <div class="between" style="margin-bottom:8px">
-    <div class="tiny" id="range"></div>
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+      <div class="tiny" id="range"></div>
+      <button id="roomBtn" onclick="toggleRoom()" class="tiny"
+        style="background:none;border:1px solid #22404f;color:#7b99a8;border-radius:4px;
+               padding:2px 7px;opacity:.4;cursor:pointer;flex:none">room</button>
+    </div>
     <div class="row" style="gap:5px">
       <button class="rng" data-h="6">6h</button>
       <button class="rng" data-h="24">1d</button>
@@ -519,8 +524,15 @@ function crosshair(act, pred, X, Y, a, b, span, W, H, T, B) {
           '<text x="' + (bx + 6) + '" y="' + (by + 47) + '" fill="#7b99a8" font-size="8.5">' + l4 + '</text>' : "");
 }
 
+var SHOW_ROOM = false;
+function toggleRoom() {
+  SHOW_ROOM = !SHOW_ROOM;
+  $("roomBtn").style.opacity = SHOW_ROOM ? "1" : ".4";
+  draw();
+}
 function draw() {
   if (!HIST || !PAR) return;
+  if ($("roomBtn")) $("roomBtn").style.opacity = SHOW_ROOM ? "1" : ".4";
   var W = 340, H = 176, L = 28, R = 8, T = 12, B = 26;
   var a = VIEW[0], b = VIEW[1], span = b - a;
   var act = HIST.cross.filter(function (p) { return p.t >= a - span && p.t <= b + span; });
@@ -530,7 +542,13 @@ function draw() {
   var pred = project(first.t, first.v, b, HIST.sps, PAR);
   var vis = act.concat(pred).filter(function (p) { return p.t >= a && p.t <= b; });
   if (!vis.length) return;
-  var vals = vis.map(function (p) { return p.v; });
+  var inWin = function (arr) {
+    return (arr || []).filter(function (p) { return p.t >= a && p.t <= b; });
+  };
+  var tubV = inWin(HIST.tub), ambV = inWin(HIST.amb);
+  var vals = vis.map(function (p) { return p.v; })
+                .concat(tubV.map(function (p) { return p.v; }))
+                .concat(SHOW_ROOM ? ambV.map(function (p) { return p.v; }) : []);
   var lo = Math.min.apply(null, vals) - .6, hi = Math.max.apply(null, vals) + .6;
   if (hi - lo < 2.5) { var m = (hi + lo) / 2; lo = m - 1.25; hi = m + 1.25; }
 
@@ -580,6 +598,12 @@ function draw() {
   $("spark").setAttribute("viewBox", "0 0 " + W + " " + H);
   $("spark").innerHTML = g +
     '<path d="' + raw + '" fill="none" stroke="#3d6b7d" stroke-width="1" opacity=".5"/>' +
+    (SHOW_ROOM
+      ? '<path d="' + path(HIST.amb) + '" fill="none" stroke="#7f7160" stroke-width="1" ' +
+        'stroke-dasharray="4 4" opacity=".85"/>'
+      : "") +
+    '<path d="' + path(HIST.tub) + '" fill="none" stroke="#5DCAA5" stroke-width="1.6" ' +
+    'stroke-linejoin="round" stroke-linecap="round"/>' +
     '<path d="' + path(pred) + '" fill="none" stroke="#d99a4e" stroke-width="1.3" ' +
     'stroke-dasharray="4 3" opacity=".9"/>' +
     '<path d="' + path(act) + '" fill="none" stroke="#a8ecff" stroke-width="2" ' +
@@ -590,9 +614,11 @@ function draw() {
     crosshair(act, pred, X, Y, a, b, span, W, H, T, B);
 
   var pv = pred.length ? pred[pred.length - 1].v : null;
-  $("range").innerHTML = '<span style="color:#a8ecff">actual</span> ' + tip.v.toFixed(1) +
+  var tubTip = tubV.length ? tubV[tubV.length - 1] : null;
+  $("range").innerHTML = '<span style="color:#a8ecff">chiller</span> ' + tip.v.toFixed(1) +
     '\u00B0 \u00b7 <span style="color:#d99a4e">model</span> ' +
-    (pv === null ? "-" : pv.toFixed(1)) + '\u00B0';
+    (pv === null ? "-" : pv.toFixed(1)) + '\u00B0' +
+    (tubTip ? ' \u00b7 <span style="color:#5DCAA5">tub</span> ' + tubTip.v.toFixed(1) + '\u00B0' : "");
 }
 
 async function chart() {
@@ -605,7 +631,11 @@ async function chart() {
   var sps = ev.filter(function (e) { return e.c === "temp_set_f"; })
               .sort(function (x, y) { return x.t - y.t; });
   if (temps.length < 3) return;
-  HIST = { cross: crossings(temps), sps: sps, t0: temps[0].t, raw: temps };
+  HIST = { cross: crossings(temps), sps: sps, t0: temps[0].t, raw: temps,
+           tub: ev.filter(function (e) { return e.c === "probe_b"; })
+                  .sort(function (x, y) { return x.t - y.t; }),
+           amb: ev.filter(function (e) { return e.c === "probe_a"; })
+                  .sort(function (x, y) { return x.t - y.t; }) };
   if (!HIST.cross.length) return;
   // The crossing line ends at the last crossing, which can be hours ago when
   // the water is being held: the tub sat at 40F from 04:58 to 08:00 and the
