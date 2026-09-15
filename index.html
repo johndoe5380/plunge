@@ -228,7 +228,7 @@ td:last-child{text-align:right;color:var(--muted)}
   <div class="card">
     <div class="between" style="margin-bottom:10px">
       <div class="tiny muted">Supplies on hand</div>
-      <button class="rowbtn" id="addSup">add product</button>
+      <button class="pill" id="addSup">+ Add product</button>
     </div>
     <div id="supList"></div>
     <div id="supForm" class="hide" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--rule)">
@@ -939,10 +939,12 @@ function openSup(s) {
   $("sIvl").value = s && s.interval_days !== null ? s.interval_days : "";
   $("sReorder").value = s ? (s.reorder_below || "") : "";
   $("sDelete").className = s ? "pill" : "pill hide";
+  var gal = CARE ? CARE.volume_gal : (WP.volume_gal || 100);
   $("sHint").textContent = "Enter the rate exactly as the label states it — any " +
     "amount, per any number of gallons or litres. The app converts and scales it " +
-    "to your " + CARE.volume_gal + " gal. Leave dose and interval blank for " +
-    "anything you do not use on a schedule.";
+    "to your " + gal + " gal. Leave dose and interval blank for anything you do " +
+    "not use on a schedule; set just an interval to be reminded without a fixed amount.";
+  $("supForm").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 document.querySelectorAll("[data-filt]").forEach(function (b) {
   b.onclick = function () {
