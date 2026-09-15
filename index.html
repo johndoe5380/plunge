@@ -175,7 +175,7 @@ td:last-child{text-align:right;color:var(--muted)}
     <div class="row" style="flex-wrap:wrap;gap:12px">
       <div class="fld" style="flex:1 1 170px"><label>Product</label>
         <select id="tSup"></select></div>
-      <div class="fld" style="max-width:150px"><label>Amount used</label>
+      <div class="fld" style="max-width:150px"><label id="tAmtLab">Amount used</label>
         <span style="display:flex;gap:6px;align-items:center">
           <input type="number" id="tAmt" step="0.1" style="flex:1">
           <span id="tUnit" class="tiny muted" style="min-width:26px"></span></span></div>
@@ -183,7 +183,8 @@ td:last-child{text-align:right;color:var(--muted)}
         <input type="datetime-local" id="tWhen"></div>
     </div>
     <div class="row" style="flex-wrap:wrap;gap:12px;margin-top:12px">
-      <div class="fld" style="max-width:160px"><label>Strip read before (ppm, optional)</label>
+      <div class="fld hide" id="wrapTPpm" style="max-width:160px">
+        <label>Strip read before (ppm, optional)</label>
         <input type="number" id="tPpm" step="1" placeholder="e.g. 10"></div>
       <div class="fld"><label>Note (optional)</label><input type="text" id="tNote"></div>
     </div>
@@ -239,8 +240,10 @@ td:last-child{text-align:right;color:var(--muted)}
             <option value="g">g</option><option value="tabs">tabs</option></select></div>
         <div class="fld" style="max-width:110px"><label>Bottle size</label>
           <input type="number" id="sSize" step="0.5"></div>
-        <div class="fld" style="max-width:110px"><label>Amount left</label>
-          <input type="number" id="sOnHand" step="0.5"></div>
+        <div class="fld" style="max-width:190px"><label id="sOnHandLab">Amount left</label>
+          <span style="display:flex;gap:6px;align-items:center">
+            <input type="number" id="sOnHand" step="0.5" style="flex:1">
+            <button class="rowbtn" id="sFull" style="margin:0">full</button></span></div>
       </div>
       <div class="tiny muted" style="margin:14px 0 8px">From the product label — in the unit above</div>
       <div class="row" style="flex-wrap:wrap;gap:12px">
@@ -281,7 +284,7 @@ td:last-child{text-align:right;color:var(--muted)}
     <div class="row" style="flex-wrap:wrap;gap:12px;align-items:flex-end">
       <div class="fld" style="flex:1 1 170px"><label>Product</label>
         <select id="rSup"></select></div>
-      <div class="fld" style="max-width:150px"><label>Amount added</label>
+      <div class="fld" style="max-width:150px"><label id="rAmtLab">Amount added</label>
         <span style="display:flex;gap:6px;align-items:center">
           <input type="number" id="rAmt" step="0.5" style="flex:1">
           <span id="rUnit" class="tiny muted" style="min-width:26px"></span></span></div>
@@ -742,6 +745,9 @@ function tSupChanged() {
   var s = supById($("tSup").value);
   if (!s) return;
   $("tUnit").textContent = s.unit;
+  $("tAmtLab").textContent = "Amount used (" + s.unit + ")";
+  // a strip reading only means anything for the product being measured
+  $("wrapTPpm").className = /peroxid/i.test(s.name) ? "fld" : "fld hide";
   var d = CARE.due.find(function (x) { return x.supply_id === s.id; });
   if (d) {
     var amt = d.needs_initial ? d.first_dose : d.dose;
@@ -759,7 +765,9 @@ function tSupChanged() {
 }
 function rSupChanged() {
   var s = supById($("rSup").value);
-  if (s) $("rUnit").textContent = s.unit;
+  if (!s) return;
+  $("rUnit").textContent = s.unit;
+  $("rAmtLab").textContent = "Amount added (" + s.unit + ")";
 }
 $("tSup").onchange = tSupChanged;
 $("rSup").onchange = rSupChanged;
@@ -877,7 +885,15 @@ function syncDoseUnits() {
   var u = $("sUnit").value;
   document.querySelectorAll(".dunit").forEach(function (e) { e.textContent = u; });
 }
-$("sUnit").onchange = syncDoseUnits;
+$("sUnit").onchange = function () {
+  syncDoseUnits();
+  $("sOnHandLab").textContent = "Amount left (" + $("sUnit").value + ")";
+};
+$("sFull").onclick = function () {
+  // changing bottle size does not refill the bottle - this is how you say
+  // "I opened a new one"
+  $("sOnHand").value = $("sSize").value || "";
+};
 
 function openSup(s) {
   SUPID = s ? s.id : null;
@@ -890,6 +906,7 @@ function openSup(s) {
   $("sInitQty").value = 100; $("sInitBasis").value = "gal";
   $("sDoseQty").value = 100; $("sDoseBasis").value = "gal";
   syncDoseUnits();
+  $("sOnHandLab").textContent = "Amount left (" + (s ? s.unit : $("sUnit").value) + ")";
   $("sInit").value = s && s.initial_per_100gal !== null ? s.initial_per_100gal : "";
   $("sDose").value = s && s.dose_per_100gal !== null ? s.dose_per_100gal : "";
   $("sIvl").value = s && s.interval_days !== null ? s.interval_days : "";
