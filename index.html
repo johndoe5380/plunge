@@ -139,6 +139,20 @@ td:last-child{text-align:right;color:var(--muted)}
   </div>
 
   <div class="card">
+    <div class="tiny muted" style="margin-bottom:12px">Peroxide dose</div>
+    <div class="row" style="flex-wrap:wrap;gap:14px;align-items:flex-end">
+      <div class="fld" style="max-width:130px"><label>Strip reads now (ppm)</label>
+        <input type="number" id="hPpm" step="1" value="10"></div>
+      <div class="fld" style="max-width:120px"><label>Target (ppm)</label>
+        <input type="number" id="hTgt" step="5"></div>
+    </div>
+    <div id="hOut" style="margin-top:14px"></div>
+    <div class="row" style="gap:8px;margin-top:12px">
+      <button class="pill" id="hUse">Use this dose</button>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="tiny muted" style="margin-bottom:12px">Log a treatment</div>
     <div class="row" style="flex-wrap:wrap;gap:12px">
       <div class="fld" style="flex:1 1 170px"><label>Product</label>
@@ -651,6 +665,7 @@ async function careLoad() {
       '</div></div></div>';
   }).join("");
   fillSupSelects();
+  hCalc();
   if (!$("tWhen").value) $("tWhen").value = localNow();
   $("dueList").innerHTML = due ||
     '<div class="tiny muted">No recurring treatments set up. Give a supply a dose rate and interval below.</div>';
@@ -750,6 +765,52 @@ $("rSave").onclick = async function () {
                           ts: localNow() });
   $("rAmt").value = "";
   careLoad();
+};
+
+/* ---- peroxide dose. ppm is mg/L, so this is exact once volume and bottle
+   strength are known. Density matters: a 12% solution is 12% by weight and
+   heavier than water, so it carries about 125 mg/mL, not 120. ---- */
+var STOCK = { 3: 30.3, 6: 61.3, 12: 125.2, 27: 297.8, 35: 395.5 };
+var ML_PER_OZ = 29.5735;
+
+function peroxideSupply() {
+  return CARE && CARE.supplies.find(function (s) { return /peroxid/i.test(s.name); });
+}
+
+function hCalc() {
+  if (!CARE) return null;
+  var gal = CARE.volume_gal, pct = WP.h2o2_stock_pct || 12;
+  var now = +$("hPpm").value, tgt = +$("hTgt").value;
+  var sup = peroxideSupply(), unit = sup ? sup.unit : "oz";
+  var deficit = Math.max(0, tgt - now);
+  var mg = gal * L_PER_GAL * deficit;
+  var ml = mg / (STOCK[pct] || STOCK[12]);
+  var amt = unit === "mL" ? ml : ml / ML_PER_OZ;
+  if (deficit <= 0) {
+    $("hOut").innerHTML = '<div style="color:#a8ecff;font-size:14px">Already at or above ' +
+      tgt + ' ppm \u2014 nothing to add.</div>';
+    return null;
+  }
+  $("hOut").innerHTML = '<div class="big">' + amt.toFixed(unit === "mL" ? 0 : 1) +
+    '<span style="font-size:15px;color:#7b99a8;margin-left:6px">' + unit + '</span></div>' +
+    '<div class="tiny muted" style="margin-top:6px;line-height:1.6">of ' + pct +
+    '% raises ' + gal + ' gal from ' + now + ' to ' + tgt + ' ppm. Pump running, lid off, ' +
+    '15 minutes before you get in.' +
+    (pct >= 12 ? ' Gloves \u2014 ' + pct + '% bleaches skin.' : '') + '</div>';
+  return { amt: amt, sup: sup, now: now, unit: unit };
+}
+["hPpm", "hTgt"].forEach(function (id) { $(id).addEventListener("input", hCalc); });
+
+$("hUse").onclick = function () {
+  var r = hCalc();
+  if (!r) return;
+  if (!r.sup) return alert("Add a peroxide product under Log \u2192 Supplies first");
+  $("tSup").value = r.sup.id;
+  tSupChanged();
+  $("tAmt").value = r.amt.toFixed(r.unit === "mL" ? 0 : 1);
+  $("tPpm").value = r.now;
+  $("tHint").textContent = "Calculated from the strip reading \u2014 " +
+    r.amt.toFixed(1) + " " + r.unit + " for " + CARE.volume_gal + " gal.";
 };
 
 /* ---- other water events ---- */
@@ -855,6 +916,7 @@ async function waterLoad() {
   if (WP.volume_gal) $("vol").value = WP.volume_gal;
   if (WP.h2o2_stock_pct) $("pct").value = WP.h2o2_stock_pct;
   $("tgt").value = WP.h2o2_target_ppm || 50;
+  $("hTgt").value = WP.h2o2_target_ppm || 50;
   var gal = WP.volume_gal || 100;
   $("volNote").textContent = gal + " gal = " + Math.round(gal * L_PER_GAL) +
     " litres" + (WP.gal_per_inch ? " \u00b7 " + WP.gal_per_inch +
