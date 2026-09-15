@@ -508,43 +508,54 @@ function at(arr, t) {
   return bd < 45 * 60000 ? best : null;
 }
 
-function crosshair(act, pred, X, Y, a, b, span, W, H, T, B) {
+function crosshair(act, pred, tub, amb, X, Y, a, b, span, W, H, T, B) {
   if (CUR === null) return "";
   var t = a + span * CUR;
   if (t < a || t > b) return "";
   var x = X(t), av = at(act, t), pv = at(pred, t);
-  if (!av) return "";
+  var tv = at(tub, t), mv = SHOW_ROOM ? at(amb, t) : null;
+  if (!av && !tv) return "";
+
   var lines = '<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + T +
-              '" y2="' + (H - B) + '" stroke="#7b99a8" stroke-width=".8" stroke-dasharray="2 3"/>' +
-              '<circle cx="' + x.toFixed(1) + '" cy="' + Y(av.v).toFixed(1) +
-              '" r="3.2" fill="#a8ecff"/>';
-  if (pv) lines += '<circle cx="' + x.toFixed(1) + '" cy="' + Y(pv.v).toFixed(1) +
-                   '" r="3" fill="none" stroke="#d99a4e" stroke-width="1.5"/>';
+              '" y2="' + (H - B) + '" stroke="#7b99a8" stroke-width=".8" stroke-dasharray="2 3"/>';
+  var dot = function (v, fill, stroke) {
+    return '<circle cx="' + x.toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="3.2" fill="' +
+           fill + '"' + (stroke ? ' stroke="' + stroke + '" stroke-width="1.5"' : '') + '/>';
+  };
+  if (av) lines += dot(av.v, "#a8ecff");
+  if (tv) lines += dot(tv.v, "#5DCAA5");
+  if (mv) lines += dot(mv.v, "#7f7160");
+  if (pv) lines += dot(pv.v, "none", "#d99a4e");
+
+  // rows are built from whatever series actually have a sample here, so the
+  // box shrinks before the probes exist and grows once they do
+  var rows = [];
+  if (av) rows.push(["#a8ecff", "chiller " + av.v.toFixed(1) + "\u00B0"]);
+  if (tv) rows.push(["#5DCAA5", "tub     " + tv.v.toFixed(1) + "\u00B0"]);
+  if (mv) rows.push(["#7f7160", "room    " + mv.v.toFixed(1) + "\u00B0"]);
+  if (pv) rows.push(["#d99a4e", "model   " + pv.v.toFixed(1) + "\u00B0"]);
+  if (av && tv) rows.push(["#7b99a8",
+    (av.v - tv.v >= 0 ? "+" : "") + (av.v - tv.v).toFixed(1) + "\u00B0 gap"]);
+  else if (av && pv) rows.push(["#7b99a8",
+    (pv.v - av.v >= 0 ? "+" : "") + (pv.v - av.v).toFixed(1) + "\u00B0 off"]);
 
   var d = new Date(t);
   var l1 = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "  " +
            d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  var l2 = "actual " + av.v.toFixed(1) + "\u00B0";
-  var l3 = pv ? "model  " + pv.v.toFixed(1) + "\u00B0" : "";
-  var l4 = pv ? (pv.v - av.v >= 0 ? "+" : "") + (pv.v - av.v).toFixed(1) + "\u00B0 off" : "";
-  var bw = 92, bh = pv ? 50 : 30;
+  var bw = 96, bh = 19 + rows.length * 12 + 4;
   var bx = x + 8 + bw > W ? x - bw - 8 : x + 8;
   var by = T + 2;
-  return lines +
+  var out = lines +
     '<rect x="' + bx + '" y="' + by + '" width="' + bw + '" height="' + bh +
     '" fill="#0c1a22" stroke="#22404f" rx="2" opacity=".95"/>' +
-    '<text x="' + (bx + 6) + '" y="' + (by + 12) + '" fill="#7b99a8" font-size="8.5">' + l1 + '</text>' +
-    '<text x="' + (bx + 6) + '" y="' + (by + 25) + '" fill="#a8ecff" font-size="10">' + l2 + '</text>' +
-    (pv ? '<text x="' + (bx + 6) + '" y="' + (by + 37) + '" fill="#d99a4e" font-size="10">' + l3 + '</text>' +
-          '<text x="' + (bx + 6) + '" y="' + (by + 47) + '" fill="#7b99a8" font-size="8.5">' + l4 + '</text>' : "");
+    '<text x="' + (bx + 6) + '" y="' + (by + 12) + '" fill="#7b99a8" font-size="8.5">' + l1 + '</text>';
+  rows.forEach(function (r, i) {
+    out += '<text x="' + (bx + 6) + '" y="' + (by + 25 + i * 12) + '" fill="' + r[0] +
+           '" font-size="10" xml:space="preserve">' + r[1] + '</text>';
+  });
+  return out;
 }
 
-var SHOW_ROOM = false;
-function toggleRoom() {
-  SHOW_ROOM = !SHOW_ROOM;
-  $("roomBtn").style.opacity = SHOW_ROOM ? "1" : ".4";
-  draw();
-}
 function draw() {
   if (!HIST || !PAR) return;
   if ($("roomBtn")) $("roomBtn").style.opacity = SHOW_ROOM ? "1" : ".4";
@@ -635,7 +646,7 @@ function draw() {
     (tip.t >= a && tip.t <= b
       ? '<circle cx="' + X(tip.t).toFixed(1) + '" cy="' + Y(tip.v).toFixed(1) + '" r="3.5" fill="#a8ecff"/>'
       : "") + '</g>' +
-    crosshair(act, pred, X, Y, a, b, span, W, H, T, B);
+    crosshair(act, pred, tubV, ambV, X, Y, a, b, span, W, H, T, B);
 
   var pv = pred.length ? pred[pred.length - 1].v : null;
   var tubTip = tubV.length ? tubV[tubV.length - 1] : null;
