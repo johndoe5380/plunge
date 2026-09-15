@@ -14,20 +14,20 @@ body{margin:0;background:var(--ground);color:var(--text);font-feature-settings:"
      font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
      padding:max(18px,env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom))}
 .muted{color:var(--muted)}
-.card{background:var(--panel);border:1px solid var(--rule);padding:16px;margin-top:12px}
+.card{background:var(--panel);border:1px solid var(--rule);padding:13px;margin-top:10px}
 .temp{font-size:84px;font-weight:200;line-height:1;letter-spacing:-.03em;color:var(--ice)}
 .temp.warm{color:var(--deep)}
 .unit{font-size:26px;color:var(--muted);margin-left:4px}
-.row{display:flex;align-items:center;gap:14px}
-.between{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.between{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 button{font-family:inherit;color:var(--text);background:transparent;
        border:1px solid var(--rule);border-radius:2px;cursor:pointer}
 button:active{background:rgba(168,236,255,.12)}
 button:disabled{opacity:.35}
-.step{width:76px;height:76px;font-size:32px;font-weight:300}
-.set{font-size:46px;font-weight:200;min-width:110px;text-align:center;letter-spacing:-.02em}
+.step{width:58px;height:58px;font-size:28px;font-weight:300;flex:none}
+.set{font-size:40px;font-weight:200;min-width:76px;text-align:center;letter-spacing:-.02em}
 .set.dirty{color:var(--amber)}
-.pill{padding:11px 20px;font-size:15px}
+.pill{padding:10px 16px;font-size:15px;flex:none;white-space:nowrap}
 .pill.on{border-color:var(--ice);color:var(--ice)}
 .tiny{font-size:12px;line-height:1.55}
 input,select{font-family:inherit;background:var(--ground);color:var(--text);
@@ -91,7 +91,7 @@ td:last-child{text-align:right;color:var(--muted)}
 </div>
 
 <div class="card">
-  <div class="tiny muted" style="margin-bottom:12px">Target</div>
+  <div class="tiny muted" style="margin-bottom:6px">Target</div>
   <div class="between">
     <div class="row">
       <button class="step" id="minus">&minus;</button>
@@ -100,7 +100,7 @@ td:last-child{text-align:right;color:var(--muted)}
     </div>
     <button class="pill" id="power">&nbsp;</button>
   </div>
-  <div class="tiny muted" id="writeMsg" style="margin-top:12px;min-height:17px"></div>
+  <div class="tiny muted" id="writeMsg" style="margin-top:6px"></div>
 </div>
 
 <div class="card">
@@ -620,6 +620,7 @@ function draw() {
   $("spark").innerHTML =
     '<defs><clipPath id="plotclip"><rect x="' + L + '" y="' + T + '" width="' +
     (W - L - R) + '" height="' + (H - T - B) + '"/></clipPath></defs>' + g +
+    '<g clip-path="url(#plotclip)">' +
     '<path d="' + raw + '" fill="none" stroke="#3d6b7d" stroke-width="1" opacity=".5"/>' +
     (SHOW_ROOM
       ? '<path d="' + path(HIST.amb) + '" fill="none" stroke="#7f7160" stroke-width="1" ' +
@@ -633,7 +634,7 @@ function draw() {
     'stroke-linejoin="round" stroke-linecap="round"/>' +
     (tip.t >= a && tip.t <= b
       ? '<circle cx="' + X(tip.t).toFixed(1) + '" cy="' + Y(tip.v).toFixed(1) + '" r="3.5" fill="#a8ecff"/>'
-      : "") +
+      : "") + '</g>' +
     crosshair(act, pred, X, Y, a, b, span, W, H, T, B);
 
   var pv = pred.length ? pred[pred.length - 1].v : null;
@@ -1225,17 +1226,49 @@ $("ptStop").onclick = function () { ptEnd(false); };
 drawDial();
 
 /* tabs */
+var TABS = ["chiller", "water", "log"];
+function showTab(t) {
+  if (TABS.indexOf(t) === -1) return;
+  document.querySelectorAll(".tab").forEach(function (x) {
+    x.dataset.on = x.dataset.tab === t ? "true" : "false";
+  });
+  $("pane-chiller").className = t === "chiller" ? "" : "hide";
+  $("pane-water").className   = t === "water"   ? "" : "hide";
+  $("pane-log").className     = t === "log"     ? "" : "hide";
+  if (t === "water") { waterLoad(); careLoad(); }
+  if (t === "log") careLoad();
+  window.scrollTo(0, 0);
+}
+function curTab() {
+  var b = document.querySelector('.tab[data-on="true"]');
+  return b ? b.dataset.tab : "chiller";
+}
 document.querySelectorAll(".tab").forEach(function (b) {
-  b.onclick = function () {
-    var t = b.dataset.tab;
-    document.querySelectorAll(".tab").forEach(function (x) { x.dataset.on = "false"; });
-    b.dataset.on = "true";
-    $("pane-chiller").className = t === "chiller" ? "" : "hide";
-    $("pane-water").className   = t === "water"   ? "" : "hide";
-    $("pane-log").className     = t === "log"     ? "" : "hide";
-    if (t === "water") { waterLoad(); careLoad(); }
-    if (t === "log") careLoad();
-  };
+  b.onclick = function () { showTab(b.dataset.tab); };
 });
+
+/* swipe left/right to change tab. The chart and the timer dial own their own
+   horizontal gestures, so a swipe starting on either is ignored - otherwise
+   panning the chart would fling you to the next tab. */
+(function () {
+  var x0 = null, y0 = null, live = false;
+  document.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) { live = false; return; }
+    var t = e.target;
+    live = !(t.closest && (t.closest("#spark") || t.closest("#dial") ||
+                           t.closest("input") || t.closest("select")));
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener("touchend", function (e) {
+    if (!live || x0 === null || !e.changedTouches.length) return;
+    var dx = e.changedTouches[0].clientX - x0;
+    var dy = e.changedTouches[0].clientY - y0;
+    x0 = null;
+    // must be clearly horizontal, and long enough not to be a stray finger
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
+    var i = TABS.indexOf(curTab()) + (dx < 0 ? 1 : -1);
+    if (i >= 0 && i < TABS.length) showTab(TABS[i]);
+  }, { passive: true });
+})();
 waterLoad();
 </script></body></html>
