@@ -42,7 +42,10 @@ td:last-child{text-align:right;color:var(--muted)}
      font-size:15px;padding:8px 2px;cursor:pointer;font-family:inherit}
 .tab[data-on="true"]{color:var(--text);border-bottom-color:var(--ice)}
 .big{font-size:42px;font-weight:200;color:var(--ice);letter-spacing:-.02em}
-.fld{flex:1 1 120px}
+.fld{flex:1 1 120px;min-width:0}
+.fld input,.fld select{width:100%;box-sizing:border-box}
+.fld.sm{flex:0 1 96px}
+.fld.md{flex:0 1 132px}
 .fld label{font-size:11.5px;color:var(--muted);display:block;margin-bottom:5px}
 .hide{display:none}
 .rowbtn{background:none;border:1px solid var(--rule);color:var(--muted);border-radius:2px;
@@ -160,14 +163,14 @@ td:last-child{text-align:right;color:var(--muted)}
   <div class="card">
     <div class="tiny muted" style="margin-bottom:12px">Your tub</div>
     <div class="row" style="flex-wrap:wrap;gap:14px">
-      <div class="fld"><label>Volume (gallons)</label>
+      <div class="fld sm"><label>Volume (gallons)</label>
         <input type="number" id="vol" min="10" max="400" step="1"></div>
       <div class="fld"><label>Peroxide strength</label>
         <select id="pct">
           <option value="3">3%</option><option value="6">6%</option>
           <option value="12">12%</option><option value="27">27%</option>
           <option value="35">35%</option></select></div>
-      <div class="fld"><label>Target ppm</label>
+      <div class="fld sm"><label>Target ppm</label>
         <input type="number" id="tgt" min="20" max="150" step="5"></div>
     </div>
     <div class="tiny muted" id="volNote" style="margin-top:10px"></div>
@@ -181,9 +184,9 @@ td:last-child{text-align:right;color:var(--muted)}
   <div class="card">
     <div class="tiny muted" style="margin-bottom:12px">Peroxide dose</div>
     <div class="row" style="flex-wrap:wrap;gap:14px;align-items:flex-end">
-      <div class="fld" style="max-width:130px"><label>Strip reads now (ppm)</label>
+      <div class="fld sm" style="max-width:130px"><label>Strip reads now (ppm)</label>
         <input type="number" id="hPpm" step="1" value="10"></div>
-      <div class="fld" style="max-width:120px"><label>Target (ppm)</label>
+      <div class="fld sm" style="max-width:120px"><label>Target (ppm)</label>
         <input type="number" id="hTgt" step="5"></div>
     </div>
     <div id="hOut" style="margin-top:14px"></div>
@@ -197,7 +200,7 @@ td:last-child{text-align:right;color:var(--muted)}
     <div class="row" style="flex-wrap:wrap;gap:12px">
       <div class="fld" style="flex:1 1 170px"><label>Product</label>
         <select id="tSup"></select></div>
-      <div class="fld" style="max-width:150px"><label id="tAmtLab">Amount used</label>
+      <div class="fld md" style="max-width:150px"><label id="tAmtLab">Amount used</label>
         <span style="display:flex;gap:6px;align-items:center">
           <input type="number" id="tAmt" step="0.1" style="flex:1">
           <span id="tUnit" class="tiny muted" style="min-width:26px"></span></span></div>
@@ -226,9 +229,9 @@ td:last-child{text-align:right;color:var(--muted)}
     </div>
     <div id="evForm" class="hide" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--rule)">
       <div class="row" style="flex-wrap:wrap;gap:12px">
-        <div class="fld" id="wrapGal"><label>Gallons filled</label>
+        <div class="fld sm" id="wrapGal"><label>Gallons filled</label>
           <input type="number" id="evGal" step="1"></div>
-        <div class="fld" id="wrapPpm"><label>Strip reads (ppm)</label>
+        <div class="fld sm" id="wrapPpm"><label>Strip reads (ppm)</label>
           <input type="number" id="evPpm" step="1"></div>
         <div class="fld" style="max-width:190px"><label>When</label>
           <input type="datetime-local" id="evWhen"></div>
@@ -260,9 +263,9 @@ td:last-child{text-align:right;color:var(--muted)}
         <div class="fld" style="max-width:96px"><label>Unit</label>
           <select id="sUnit"><option value="oz">oz</option><option value="mL">mL</option>
             <option value="g">g</option><option value="tabs">tabs</option></select></div>
-        <div class="fld" style="max-width:110px"><label>Bottle size</label>
+        <div class="fld sm" style="max-width:110px"><label>Bottle size</label>
           <input type="number" id="sSize" step="0.5"></div>
-        <div class="fld" style="max-width:190px"><label id="sOnHandLab">Amount left</label>
+        <div class="fld md" style="max-width:190px"><label id="sOnHandLab">Amount left</label>
           <span style="display:flex;gap:6px;align-items:center">
             <input type="number" id="sOnHand" step="0.5" style="flex:1">
             <button class="rowbtn" id="sFull" style="margin:0">full</button></span></div>
@@ -287,9 +290,9 @@ td:last-child{text-align:right;color:var(--muted)}
             <select id="sDoseBasis" style="width:82px">
               <option value="gal">gallons</option><option value="L">litres</option>
             </select></span></div>
-        <div class="fld" style="max-width:110px"><label>Repeat every (days)</label>
+        <div class="fld sm" style="max-width:110px"><label>Repeat every (days)</label>
           <input type="number" id="sIvl" step="1"></div>
-        <div class="fld" style="max-width:110px"><label>Reorder below</label>
+        <div class="fld sm" style="max-width:110px"><label>Reorder below</label>
           <input type="number" id="sReorder" step="0.5"></div>
       </div>
       <div class="tiny muted" id="sHint" style="margin-top:10px"></div>
@@ -306,7 +309,7 @@ td:last-child{text-align:right;color:var(--muted)}
     <div class="row" style="flex-wrap:wrap;gap:12px;align-items:flex-end">
       <div class="fld" style="flex:1 1 170px"><label>Product</label>
         <select id="rSup"></select></div>
-      <div class="fld" style="max-width:150px"><label id="rAmtLab">Amount added</label>
+      <div class="fld md" style="max-width:150px"><label id="rAmtLab">Amount added</label>
         <span style="display:flex;gap:6px;align-items:center">
           <input type="number" id="rAmt" step="0.5" style="flex:1">
           <span id="rUnit" class="tiny muted" style="min-width:26px"></span></span></div>
@@ -558,7 +561,11 @@ function draw() {
     return (arr || []).filter(function (p) { return p.t >= a && p.t <= b; });
   };
   var tubV = inWin(HIST.tub), ambV = inWin(HIST.amb);
-  var vals = vis.map(function (p) { return p.v; })
+  // Scale to what was actually measured. Over a multi-day window the model
+  // projection runs away toward ambient, and letting it set the axis squashes
+  // every real reading into a stripe. It gets clipped instead.
+  var actVis = act.filter(function (p) { return p.t >= a && p.t <= b; });
+  var vals = (actVis.length ? actVis : vis).map(function (p) { return p.v; })
                 .concat(tubV.map(function (p) { return p.v; }))
                 .concat(SHOW_ROOM ? ambV.map(function (p) { return p.v; }) : []);
   var lo = Math.min.apply(null, vals) - .6, hi = Math.max.apply(null, vals) + .6;
@@ -568,11 +575,13 @@ function draw() {
   var Y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
   var g = "", v, d, x;
 
-  var stepV = (hi - lo) > 8 ? 2 : 1;
-  for (v = Math.ceil(lo); v <= hi; v += stepV)
+  var rng = hi - lo;
+  var stepV = rng <= 3 ? .5 : rng <= 7 ? 1 : rng <= 16 ? 2 : rng <= 35 ? 5 : 10;
+  var lab = function (n) { return stepV < 1 ? n.toFixed(1) : String(Math.round(n)); };
+  for (v = Math.ceil(lo / stepV) * stepV; v <= hi; v += stepV)
     g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) +
          '" stroke="#22404f" stroke-width=".5"/><text x="' + (L - 5) + '" y="' + (Y(v) + 3.5) +
-         '" fill="#7b99a8" font-size="9" text-anchor="end">' + v + '</text>';
+         '" fill="#7b99a8" font-size="9" text-anchor="end">' + lab(v) + '</text>';
 
   var stepT = span > 36e5 * 36 ? 864e5 : span > 36e5 * 12 ? 216e5 : span > 36e5 * 4 ? 72e5 : 36e5;
   var t = Math.ceil(a / stepT) * stepT;
@@ -608,7 +617,9 @@ function draw() {
            " L" + X(xe).toFixed(1) + " " + Y(rr[i2].v).toFixed(1);
   }
   $("spark").setAttribute("viewBox", "0 0 " + W + " " + H);
-  $("spark").innerHTML = g +
+  $("spark").innerHTML =
+    '<defs><clipPath id="plotclip"><rect x="' + L + '" y="' + T + '" width="' +
+    (W - L - R) + '" height="' + (H - T - B) + '"/></clipPath></defs>' + g +
     '<path d="' + raw + '" fill="none" stroke="#3d6b7d" stroke-width="1" opacity=".5"/>' +
     (SHOW_ROOM
       ? '<path d="' + path(HIST.amb) + '" fill="none" stroke="#7f7160" stroke-width="1" ' +
@@ -617,7 +628,7 @@ function draw() {
     '<path d="' + path(HIST.tub) + '" fill="none" stroke="#5DCAA5" stroke-width="1.6" ' +
     'stroke-linejoin="round" stroke-linecap="round"/>' +
     '<path d="' + path(pred) + '" fill="none" stroke="#d99a4e" stroke-width="1.3" ' +
-    'stroke-dasharray="4 3" opacity=".9"/>' +
+    'stroke-dasharray="4 3" opacity=".9" clip-path="url(#plotclip)"/>' +
     '<path d="' + path(act) + '" fill="none" stroke="#a8ecff" stroke-width="2" ' +
     'stroke-linejoin="round" stroke-linecap="round"/>' +
     (tip.t >= a && tip.t <= b
@@ -700,11 +711,15 @@ async function chart() {
   el.addEventListener("touchmove", function (e) {
     if (!VIEW) return;
     if (pinch && e.touches.length === 2) {
+      // Every frame must be computed from the gesture's starting view, not
+      // from the VIEW we just wrote - otherwise the zoom compounds and the
+      // pan offset is re-applied on every move.
       var r = dist(e.touches) / Math.max(1, pinch.d);
-      var c = (VIEW[0] + VIEW[1]) / 2, sp = pinch.span / r;
-      VIEW = [c - sp / 2, c + sp / 2];
+      var sp = Math.min(Math.max(pinch.span / r, 20 * 60000),
+                        SPAN[1] - SPAN[0] + 36e5);
+      var c = (pinch.v[0] + pinch.v[1]) / 2;
       var per = sp / el.clientWidth, dx = mid(e.touches) - pinch.x;
-      VIEW = [VIEW[0] - dx * per, VIEW[1] - dx * per];
+      VIEW = [c - sp / 2 - dx * per, c + sp / 2 - dx * per];
       clamp(); draw();
     } else if (e.touches.length === 1) {
       CUR = frac(e.touches[0].clientX); draw();
