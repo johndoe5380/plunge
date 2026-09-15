@@ -728,6 +728,14 @@ var localNow = function (d) {
   d = d || new Date();
   return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 };
+/* A datetime-local field gives "2026-09-11T10:22" with no timezone. The
+   server runs in UTC and would read that as 10:22Z, shifting every entry by
+   your offset. Convert here, where the browser knows what local means. */
+var toUTC = function (localStr) {
+  if (!localStr) return new Date().toISOString();
+  var d = new Date(localStr);
+  return isNaN(d) ? new Date().toISOString() : d.toISOString();
+};
 var supById = function (id) {
   return CARE.supplies.find(function (x) { return x.id === +id; });
 };
@@ -775,7 +783,7 @@ $("rSup").onchange = rSupChanged;
 $("tSave").onclick = async function () {
   var s = supById($("tSup").value);
   if (!s || !$("tAmt").value) return alert("Pick a product and an amount");
-  var when = $("tWhen").value || localNow();
+  var when = toUTC($("tWhen").value);
   if ($("tPpm").value !== "") {
     await api("addEvent", { kind: "reading", value: $("tPpm").value, ts: when,
                             note: "before dosing" });
@@ -790,7 +798,7 @@ $("rSave").onclick = async function () {
   var s = supById($("rSup").value);
   if (!s || !$("rAmt").value) return alert("Pick a product and an amount");
   await api("addEvent", { kind: "restock", supply_id: s.id, amount: $("rAmt").value,
-                          ts: localNow() });
+                          ts: new Date().toISOString() });
   $("rAmt").value = "";
   careLoad();
 };
@@ -859,7 +867,7 @@ function openEv(kind) {
 }
 $("evCancel").onclick = function () { $("evForm").className = "hide"; };
 $("evSave").onclick = async function () {
-  var q = { kind: EVKIND, ts: $("evWhen").value };
+  var q = { kind: EVKIND, ts: toUTC($("evWhen").value) };
   if (EVKIND === "refill") q.value = $("evGal").value || CARE.volume_gal;
   if (EVKIND === "reading") q.value = $("evPpm").value;
   if ($("evNote").value) q.note = $("evNote").value;
@@ -1079,7 +1087,7 @@ async function ptEnd(completed) {
     kind: "plunge",
     amount: (secs / 60).toFixed(2),
     value: PT.startTemp === null ? "" : PT.startTemp,
-    ts: new Date(PT.t0 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
+    ts: new Date(PT.t0).toISOString(),
     note: (completed ? "" : "stopped early, ") +
           (PT.startTemp !== null ? "in " + PT.startTemp + "\u00B0F" : "") +
           (endTemp !== null && endTemp !== PT.startTemp ? ", out " + endTemp + "\u00B0F" : ""),
