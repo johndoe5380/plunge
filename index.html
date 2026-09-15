@@ -297,7 +297,16 @@ td:last-child{text-align:right;color:var(--muted)}
   </div>
 
   <div class="card">
-    <div class="tiny muted" style="margin-bottom:8px">History</div>
+    <div class="between" style="margin-bottom:10px">
+      <div class="tiny muted">History</div>
+      <div class="row" style="gap:5px;flex-wrap:wrap">
+        <button class="rng" data-filt="all" data-on="true">all</button>
+        <button class="rng" data-filt="plunge">plunges</button>
+        <button class="rng" data-filt="treatment">treatments</button>
+        <button class="rng" data-filt="water">water</button>
+        <button class="rng" data-filt="stock">stock</button>
+      </div>
+    </div>
     <table id="evLog"></table>
   </div>
 </div><!-- /pane-log -->
@@ -647,7 +656,7 @@ async function chart() {
 })();
 
 /* ---------------- event log, supplies, reminders ---------------- */
-var CARE = null;
+var CARE = null, EVFILT = "all";
 var KINDLABEL = { treatment: "Treatment", refill: "Drained & refilled",
                   filter: "Cleaned filter", note: "Note", reading: "Strip test",
                   restock: "Restocked", dose: "Dose", plunge: "Plunge" };
@@ -665,23 +674,27 @@ async function careLoad() {
   var due = CARE.due.map(function (d) {
     var over = d.days_overdue;
     var amt = d.needs_initial ? d.first_dose : d.dose;
+    var noFixed = amt === null || amt === undefined;
     var colour = d.needs_initial ? "#d99a4e" : over > 0 ? "#d97b6c" : "#a8ecff";
     var when = d.reset_by_refill
-        ? "shock dose " + d.first_dose + " " + d.unit + " - fresh water"
-      : !d.last_ts ? "never done - first dose " + d.first_dose + " " + d.unit
+        ? (noFixed ? "test and top up - fresh water"
+                   : "shock dose " + d.first_dose + " " + d.unit + " - fresh water")
+      : !d.last_ts ? (noFixed ? "never logged - test and top up"
+                              : "never done - first dose " + d.first_dose + " " + d.unit)
       : over > 0 ? "overdue by " + over + "d"
       : "due in " + Math.abs(over) + "d";
     return '<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;' +
       'border-top:1px solid var(--rule)">' +
       '<div><div style="font-size:14px">' + d.name + '</div>' +
-      '<div class="tiny muted" style="margin-top:2px">' + amt + ' ' + d.unit +
+      '<div class="tiny muted" style="margin-top:2px">' +
+      (noFixed ? 'dose from strip reading' : amt + ' ' + d.unit) +
       ' every ' + d.interval_days + 'd' +
       (d.reset_by_refill ? ' \u00b7 reset by refill' :
        d.last_ts ? ' \u00b7 last ' + ago(d.last_ts) : '') + '</div></div>' +
       '<div style="text-align:right"><div style="font-size:12.5px;color:' + colour + '">' +
       when + '</div>' +
       '<div class="tiny muted" style="margin-top:2px">' +
-      (d.days_of_supply !== null ? d.uses_left + ' doses left' : '') +
+      (d.uses_left !== null && d.uses_left !== undefined ? d.uses_left + ' doses left' : '') +
       (d.reorder ? ' \u00b7 <span style="color:#d97b6c">reorder</span>' : '') +
       '</div></div></div>';
   }).join("");
@@ -704,7 +717,13 @@ async function careLoad() {
   }).join("");
 
   // --- history ---
-  $("evLog").innerHTML = CARE.events.slice(0, 20).map(function (e) {
+  var GROUP = { plunge: "plunge", treatment: "treatment", reading: "treatment",
+                refill: "water", filter: "water", note: "water",
+                restock: "stock" };
+  var rows = CARE.events.filter(function (e) {
+    return EVFILT === "all" || GROUP[e.kind] === EVFILT;
+  });
+  $("evLog").innerHTML = rows.slice(0, 25).map(function (e) {
     var d = new Date(e.ts);
     var sup = CARE.supplies.find(function (x) { return x.id === e.supply_id; });
     var what = KINDLABEL[e.kind] || e.kind;
@@ -720,7 +739,7 @@ async function careLoad() {
       " " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) +
       "</td><td style='text-align:right'>" + what +
       "<button class='rowbtn' data-evdel='" + e.id + "'>&times;</button></td></tr>";
-  }).join("") || '<tr><td class="muted">Nothing logged yet</td><td></td></tr>';
+  }).join("") || '<tr><td class="muted">Nothing in this view</td><td></td></tr>';
 }
 
 /* ---- treatment form: the one place a treatment is entered ---- */
@@ -925,6 +944,13 @@ function openSup(s) {
     "to your " + CARE.volume_gal + " gal. Leave dose and interval blank for " +
     "anything you do not use on a schedule.";
 }
+document.querySelectorAll("[data-filt]").forEach(function (b) {
+  b.onclick = function () {
+    document.querySelectorAll("[data-filt]").forEach(function (x) { x.dataset.on = "false"; });
+    b.dataset.on = "true"; EVFILT = b.dataset.filt; careLoad();
+  };
+});
+
 $("sCancel").onclick = function () { $("supForm").className = "hide"; };
 $("addSup").onclick = function () { openSup(null); };
 $("sSave").onclick = async function () {
