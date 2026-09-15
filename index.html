@@ -556,6 +556,11 @@ function crosshair(act, pred, tub, amb, X, Y, a, b, span, W, H, T, B) {
   return out;
 }
 
+var SHOW_ROOM = false;
+function toggleRoom() {
+  SHOW_ROOM = !SHOW_ROOM;
+  draw();
+}
 function draw() {
   if (!HIST || !PAR) return;
   if ($("roomBtn")) $("roomBtn").style.opacity = SHOW_ROOM ? "1" : ".4";
