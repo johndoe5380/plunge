@@ -844,7 +844,7 @@ async function careLoad() {
     if (e.kind === "refill" && e.value) what += " \u00b7 " + e.value + " gal";
     if (e.kind === "reading" && e.value) what += " \u00b7 " + e.value + " ppm";
     if (e.kind === "plunge") what = "Plunge \u00b7 " + (+e.amount).toFixed(1) + " min" +
-      (e.value ? " at " + e.value + "\u00B0F" : "");
+      (e.value ? " at " + (+e.value).toFixed(1) + "\u00B0F" : "");
     if (sup) what += " \u00b7 " + sup.name;
     if (e.note) what += " \u00b7 " + e.note;
     return "<tr><td>" + d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
@@ -1128,6 +1128,17 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) { re
    temperature at both ends. Those windows then get excluded from model
    fitting - a body dumps hundreds of BTU into the tub and the thermal model
    has no term for it. */
+// Water temperature for logging. The tub probe is the real thing; the
+// chiller's sensor reads about 2F high and only in whole degrees, so it is
+// only a fallback. Returns [value, source].
+function waterNow() {
+  if (dev && dev.probes && dev.probes.tub !== null && dev.probes.tub !== undefined &&
+      dev.probes.age_min !== null && dev.probes.age_min < 10) {
+    return [dev.probes.tub, "tub"];
+  }
+  if (dev && dev.temp_current_f) return [dev.temp_current_f, "panel"];
+  return [null, null];
+}
 var PT = { target: 180, left: 180, running: false, t0: null, startTemp: null, id: null };
 
 function fmt(sec) {
@@ -1201,9 +1212,13 @@ function beep(times) {
 
 async function ptStart() {
   PT.running = true; PT.left = PT.target; PT.t0 = Date.now();
-  PT.startTemp = dev ? dev.temp_current_f : null;
+  var w0 = waterNow();
+  PT.startTemp = w0[0]; PT.startSrc = w0[1];
+  PT.startPanel = dev ? dev.temp_current_f : null;
   $("ptGo").className = "pill hide"; $("ptStop").className = "pill";
-  $("ptSub").textContent = PT.startTemp ? "in at " + PT.startTemp + "\u00B0F" : "";
+  $("ptSub").textContent = PT.startTemp === null ? ""
+    : "in at " + PT.startTemp.toFixed(1) + "\u00B0F" +
+      (PT.startSrc === "panel" ? " (panel)" : "");
   try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); AC.resume(); } catch (e) {}
   try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
   PT.id = setInterval(function () {
@@ -1221,16 +1236,22 @@ async function ptEnd(completed) {
   PT.left = PT.target; drawDial();
   if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
   if (secs < 10) { $("ptSub").textContent = "too short to log"; return; }
-  var endTemp = dev ? dev.temp_current_f : null;
+  var w1 = waterNow(), endTemp = w1[0];
   $("ptState").textContent = "logging\u2026";
   await api("addEvent", {
     kind: "plunge",
     amount: (secs / 60).toFixed(2),
-    value: PT.startTemp === null ? "" : PT.startTemp,
+    value: PT.startTemp === null ? "" : PT.startTemp.toFixed(1),
     ts: new Date(PT.t0).toISOString(),
     note: (completed ? "" : "stopped early, ") +
-          (PT.startTemp !== null ? "in " + PT.startTemp + "\u00B0F" : "") +
-          (endTemp !== null && endTemp !== PT.startTemp ? ", out " + endTemp + "\u00B0F" : ""),
+          (PT.startTemp !== null
+            ? "in " + PT.startTemp.toFixed(1) + "\u00B0F" +
+              (PT.startSrc === "panel" ? " (panel, no probe)" : "")
+            : "no reading") +
+          (endTemp !== null && PT.startTemp !== null && Math.abs(endTemp - PT.startTemp) >= .1
+            ? ", out " + endTemp.toFixed(1) + "\u00B0F" : "") +
+          (PT.startSrc === "tub" && PT.startPanel
+            ? ", panel said " + PT.startPanel + "\u00B0F" : ""),
   });
   $("ptState").textContent = fmt(secs) + " logged";
   $("ptSub").textContent = "drag the dial to set";
