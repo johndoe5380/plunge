@@ -84,6 +84,24 @@ td:last-child{text-align:right;color:var(--muted)}
 </div>
 
 <div class="card">
+  <div class="between" style="margin-bottom:4px">
+    <div class="tiny muted">Plunge timer</div>
+    <div class="tiny muted" id="ptState"></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+    <svg id="dial" viewBox="0 0 120 120" style="width:130px;height:130px;touch-action:none"></svg>
+    <div style="flex:1 1 150px">
+      <div id="ptClock" style="font-size:40px;font-weight:200;letter-spacing:-.02em">3:00</div>
+      <div class="tiny muted" id="ptSub" style="margin-top:4px">drag the dial to set</div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="pill" id="ptGo">Start</button>
+        <button class="pill hide" id="ptStop">Stop</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
   <div class="between" style="margin-bottom:8px">
     <div class="tiny" id="range"></div>
     <div class="row" style="gap:5px">
@@ -629,7 +647,7 @@ async function chart() {
 var CARE = null;
 var KINDLABEL = { treatment: "Treatment", refill: "Drained & refilled",
                   filter: "Cleaned filter", note: "Note", reading: "Strip test",
-                  restock: "Restocked", dose: "Dose" };
+                  restock: "Restocked", dose: "Dose", plunge: "Plunge" };
 
 function ago(ts) {
   var d = (Date.now() - new Date(ts)) / 864e5;
@@ -691,6 +709,8 @@ async function careLoad() {
       e.amount + " " + (sup ? sup.unit : "");
     if (e.kind === "refill" && e.value) what += " \u00b7 " + e.value + " gal";
     if (e.kind === "reading" && e.value) what += " \u00b7 " + e.value + " ppm";
+    if (e.kind === "plunge") what = "Plunge \u00b7 " + (+e.amount).toFixed(1) + " min" +
+      (e.value ? " at " + e.value + "\u00B0F" : "");
     if (sup) what += " \u00b7 " + sup.name;
     if (e.note) what += " \u00b7 " + e.note;
     return "<tr><td>" + d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
@@ -937,6 +957,124 @@ refresh(); chart();
 setInterval(refresh, 30000);
 setInterval(chart, 300000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(); chart(); } });
+
+/* ---------------- plunge timer ----------------
+   Logs the session itself: start time, how long you were in, and the water
+   temperature at both ends. Those windows then get excluded from model
+   fitting - a body dumps hundreds of BTU into the tub and the thermal model
+   has no term for it. */
+var PT = { target: 180, left: 180, running: false, t0: null, startTemp: null, id: null };
+
+function fmt(sec) {
+  sec = Math.max(0, Math.round(sec));
+  return Math.floor(sec / 60) + ":" + ("0" + (sec % 60)).slice(-2);
+}
+
+function drawDial() {
+  var frac = PT.running ? PT.left / PT.target : PT.target / 900;   // dial spans 15 min
+  frac = Math.max(0, Math.min(1, frac));
+  var R = 50, C = 2 * Math.PI * R;
+  var col = PT.running ? "#a8ecff" : "#3d6b7d";
+  var ticks = "";
+  for (var m = 1; m <= 15; m++) {
+    var a = (m / 15) * 2 * Math.PI - Math.PI / 2;
+    var r1 = m % 5 === 0 ? 40 : 44;
+    ticks += '<line x1="' + (60 + r1 * Math.cos(a)).toFixed(1) + '" y1="' +
+      (60 + r1 * Math.sin(a)).toFixed(1) + '" x2="' + (60 + 47 * Math.cos(a)).toFixed(1) +
+      '" y2="' + (60 + 47 * Math.sin(a)).toFixed(1) +
+      '" stroke="#22404f" stroke-width="' + (m % 5 === 0 ? 1.6 : .8) + '"/>';
+  }
+  var ang = frac * 2 * Math.PI - Math.PI / 2;
+  $("dial").innerHTML = ticks +
+    '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="#22404f" stroke-width="6"/>' +
+    '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="' + col + '" stroke-width="6" ' +
+    'stroke-linecap="round" stroke-dasharray="' + (frac * C).toFixed(1) + ' ' + C.toFixed(1) +
+    '" transform="rotate(-90 60 60)"/>' +
+    '<circle cx="' + (60 + R * Math.cos(ang)).toFixed(1) + '" cy="' +
+    (60 + R * Math.sin(ang)).toFixed(1) + '" r="6" fill="' + col + '"/>';
+  $("ptClock").textContent = fmt(PT.running ? PT.left : PT.target);
+}
+
+(function dialDrag() {
+  var el = $("dial"), down = false;
+  function set(e) {
+    if (PT.running) return;
+    var pt = e.touches ? e.touches[0] : e;
+    var r = el.getBoundingClientRect();
+    var x = pt.clientX - (r.left + r.width / 2), y = pt.clientY - (r.top + r.height / 2);
+    var a = Math.atan2(y, x) + Math.PI / 2;
+    if (a < 0) a += 2 * Math.PI;
+    var mins = Math.max(0.5, Math.round((a / (2 * Math.PI)) * 15 * 2) / 2);
+    PT.target = Math.round(mins * 60); PT.left = PT.target;
+    $("ptSub").textContent = mins.toFixed(1).replace(".0", "") + " minutes";
+    drawDial();
+  }
+  el.addEventListener("pointerdown", function (e) { down = true; el.setPointerCapture(e.pointerId); set(e); });
+  el.addEventListener("pointermove", function (e) { if (down) set(e); });
+  el.addEventListener("pointerup", function () { down = false; });
+  el.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+})();
+
+/* alarm: built in the browser, no asset to load. Started from a tap so iOS
+   allows audio. Screen lock will still silence it - keep the phone awake. */
+var AC = null, wakeLock = null;
+function beep(times) {
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    for (var i = 0; i < times; i++) {
+      var o = AC.createOscillator(), g = AC.createGain();
+      var t = AC.currentTime + i * 0.55;
+      o.type = "sine"; o.frequency.setValueAtTime(880, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.5, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+      o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + 0.45);
+    }
+    if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 600]);
+  } catch (e) { /* audio blocked */ }
+}
+
+async function ptStart() {
+  PT.running = true; PT.left = PT.target; PT.t0 = Date.now();
+  PT.startTemp = dev ? dev.temp_current_f : null;
+  $("ptGo").className = "pill hide"; $("ptStop").className = "pill";
+  $("ptSub").textContent = PT.startTemp ? "in at " + PT.startTemp + "\u00B0F" : "";
+  try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); AC.resume(); } catch (e) {}
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  PT.id = setInterval(function () {
+    PT.left = PT.target - (Date.now() - PT.t0) / 1000;
+    if (PT.left <= 0) { beep(4); ptEnd(true); }
+    drawDial();
+  }, 250);
+  drawDial();
+}
+
+async function ptEnd(completed) {
+  clearInterval(PT.id); PT.running = false;
+  var secs = Math.round((Date.now() - PT.t0) / 1000);
+  $("ptGo").className = "pill"; $("ptStop").className = "pill hide";
+  PT.left = PT.target; drawDial();
+  if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  if (secs < 10) { $("ptSub").textContent = "too short to log"; return; }
+  var endTemp = dev ? dev.temp_current_f : null;
+  $("ptState").textContent = "logging\u2026";
+  await api("addEvent", {
+    kind: "plunge",
+    amount: (secs / 60).toFixed(2),
+    value: PT.startTemp === null ? "" : PT.startTemp,
+    ts: new Date(PT.t0 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
+    note: (completed ? "" : "stopped early, ") +
+          (PT.startTemp !== null ? "in " + PT.startTemp + "\u00B0F" : "") +
+          (endTemp !== null && endTemp !== PT.startTemp ? ", out " + endTemp + "\u00B0F" : ""),
+  });
+  $("ptState").textContent = fmt(secs) + " logged";
+  $("ptSub").textContent = "drag the dial to set";
+  setTimeout(function () { $("ptState").textContent = ""; }, 6000);
+}
+
+$("ptGo").onclick = ptStart;
+$("ptStop").onclick = function () { ptEnd(false); };
+drawDial();
 
 /* tabs */
 document.querySelectorAll(".tab").forEach(function (b) {
