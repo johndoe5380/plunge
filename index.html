@@ -615,8 +615,12 @@ function draw() {
   // projection runs away toward ambient, and letting it set the axis squashes
   // every real reading into a stripe. It gets clipped instead.
   var actVis = act.filter(function (p) { return p.t >= a && p.t <= b; });
+  var predVis = pred.filter(function (p) { return p.t >= a && p.t <= b; }).map(function (p) { return p.v; });
+  var plY = dev && dev.ctl && dev.ctl.plan;
   var vals = (actVis.length ? actVis : vis).map(function (p) { return p.v; })
                 .concat(tubV.map(function (p) { return p.v; }))
+                .concat(predVis)
+                .concat(plY && plY.target && plY.plungeAt >= a && plY.plungeAt <= b ? [plY.target] : [])
                 .concat(SHOW_ROOM ? ambV.map(function (p) { return p.v; }) : []);
   var lo = Math.min.apply(null, vals) - .6, hi = Math.max.apply(null, vals) + .6;
   if (hi - lo < 2.5) { var m = (hi + lo) / 2; lo = m - 1.25; hi = m + 1.25; }
@@ -678,8 +682,9 @@ function draw() {
       return '<line x1="' + px + '" x2="' + px + '" y1="' + T + '" y2="' + (H - B) +
              '" style="stroke:var(--tub)" stroke-width=".8" opacity=".45"/>' +
              '<circle cx="' + px + '" cy="' + py + '" r="5" fill="none" style="stroke:var(--tub)" stroke-width="1.5"/>' +
-             '<text x="' + (Number(px) + 8) + '" y="' + (T + 10) + '" style="fill:var(--tub)" font-size="9">plunge ' +
-             pl.target + '\u00B0</text>';
+             (Number(px) > W - 70
+               ? '<text x="' + (Number(px) - 8) + '" y="' + (T + 10) + '" text-anchor="end" style="fill:var(--tub)" font-size="9">plunge ' + pl.target + '\u00B0</text>'
+               : '<text x="' + (Number(px) + 8) + '" y="' + (T + 10) + '" style="fill:var(--tub)" font-size="9">plunge ' + pl.target + '\u00B0</text>');
     })() +
     (Date.now() >= a && Date.now() <= b
       ? '<line x1="' + X(Date.now()).toFixed(1) + '" x2="' + X(Date.now()).toFixed(1) + '" y1="' + T +
