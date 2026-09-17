@@ -880,7 +880,11 @@ async function careLoad() {
   var GROUP = { plunge: "plunge", treatment: "treatment", reading: "treatment",
                 refill: "water", filter: "water", note: "water",
                 restock: "stock" };
+  // controller bookkeeping (phase changes, alerts) lives in the same table
+  // but is not part of the water-care history
   var rows = CARE.events.filter(function (e) {
+    return e.kind !== "phase" && e.kind !== "alert";
+  }).filter(function (e) {
     return EVFILT === "all" || GROUP[e.kind] === EVFILT;
   });
   $("evLog").innerHTML = rows.slice(0, 25).map(function (e) {
