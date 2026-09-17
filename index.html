@@ -98,6 +98,9 @@ p.notice{margin:0 0 14px;padding:12px 14px;border-radius:9px;font-size:14.5px;li
   <div><span class="temp" id="cur">--</span><span class="unit">&deg;F</span></div>
   <p id="status"></p>
   <div class="tiny muted" id="sub"></div>
+  <div id="skipRow" class="hide" style="margin-top:12px">
+    <button class="ghost tiny" id="skipBtn" onclick="skipPlunge()" style="border-color:var(--rule);padding:7px 12px">Skip this plunge</button>
+  </div>
 </div>
 
 <div class="card">
@@ -390,6 +393,15 @@ function saveKey() {
   try { localStorage.setItem("plunge_k", v); } catch (e) {}
   location.reload();
 }
+async function skipPlunge() {
+  var pl = dev && dev.ctl && dev.ctl.plan;
+  if (!pl || !pl.plungeAt) return;
+  var when = new Date(pl.plungeAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (!confirm("Skip the " + when + " plunge? The chiller will coast and the next one will be planned instead.")) return;
+  $("skipBtn").disabled = true; $("skipBtn").textContent = "skipping\u2026";
+  await api("skip", { at: String(pl.plungeAt) });
+  setTimeout(refresh, 1500);
+}
 function signOut() {
   try { localStorage.removeItem("plunge_k"); } catch (e) {}
   location.reload();
@@ -419,6 +431,12 @@ function paint() {
     : fresh ? ctl.status
     : cooling ? "Cooling. The chiller will stop at " + dev.temp_set_f + "\u00B0 on its own sensor."
     : "Coasting. The chiller restarts itself at " + (dev.temp_set_f + 5) + "\u00B0.";
+  var isOff = fresh && /^Behind schedule|Controller stopped/.test(ctl.status);
+  $("status").style.color = isOff ? "var(--red)" : "";
+  var pl = ctl && ctl.plan, ahead = pl && pl.plungeAt ? (pl.plungeAt - Date.now()) / 36e5 : null;
+  $("skipRow").className = pl && pl.plungeAt && ahead < 14 && ahead > -2 && pl.phase !== "coast-only" ? "" : "hide";
+  if (pl && pl.plungeAt) $("skipBtn").textContent = "Skip the " + new Date(pl.plungeAt)
+    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " plunge";
   var subs = [];
   if (live) subs.push("chiller reads " + cur + "\u00B0");
   if (pr && pr.ambient !== null && pr.ambient !== undefined) subs.push("room " + pr.ambient.toFixed(0) + "\u00B0");
