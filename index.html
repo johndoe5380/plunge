@@ -139,7 +139,7 @@ p.notice{margin:0 0 14px;padding:12px 14px;border-radius:9px;font-size:14.5px;li
     </div>
   </div>
   <svg id="spark" viewBox="0 0 340 176"></svg>
-  <div class="tiny muted" style="margin-top:6px">Drag a finger across to read values, two fingers to pan and zoom.
+  <div class="tiny muted" style="margin-top:6px">Drag a finger across to read values; hold it at either edge and the window slides that way. Pinch to zoom.
     The dashed line is the forecast: where the water goes if the plan runs as written, from the last real reading.</div>
 </div>
 
@@ -775,38 +775,70 @@ async function chart() {
       pinch = { d: dist(e.touches), x: mid(e.touches), span: VIEW[1] - VIEW[0], v: VIEW.slice() };
       pan = null; CUR = null; draw();
     } else if (e.touches.length === 1) {
-      CUR = frac(e.touches[0].clientX); draw();
+      if (Date.now() - pinchEndedAt < 350) return;   // a finger lifting off a pinch
+      setCursor(e.touches[0].clientX); draw();
     }
   }, { passive: true });
 
   var RAF = 0;
   function frame() { if (RAF) return; RAF = requestAnimationFrame(function () { RAF = 0; draw(); }); }
+
+  // One finger reads values. Push it to the edge of the chart and the window
+  // slides that way for as long as it stays there - so a single drag can walk
+  // from yesterday to tomorrow without a pinch or a second finger.
+  var EDGE = 0, edgeRAF = 0, pinchEndedAt = 0;
+  function edgeTick() {
+    edgeRAF = 0;
+    if (!EDGE || !VIEW) return;
+    var span = VIEW[1] - VIEW[0], dt = span * 0.008 * EDGE;   // ~0.8% of the window per frame
+    var lo = SPAN[0] - 36e5, hi = SPAN[1] + 36e5;
+    if ((dt > 0 && VIEW[1] + dt > hi) || (dt < 0 && VIEW[0] + dt < lo)) return;
+    VIEW = [VIEW[0] + dt, VIEW[1] + dt];
+    draw();
+    edgeRAF = requestAnimationFrame(edgeTick);
+  }
+  function setCursor(clientX) {
+    var r = el.getBoundingClientRect(), f = (clientX - r.left) / r.width;
+    CUR = Math.max(0, Math.min(1, f));
+    // dead zone in the middle, then a ramp so a light touch at the edge crawls
+    EDGE = f > .88 ? Math.min(1, (f - .88) / .12) : f < .12 ? -Math.min(1, (.12 - f) / .12) : 0;
+    if (EDGE && !edgeRAF) edgeRAF = requestAnimationFrame(edgeTick);
+  }
+  function stopEdge() { EDGE = 0; if (edgeRAF) { cancelAnimationFrame(edgeRAF); edgeRAF = 0; } }
   el.addEventListener("touchmove", function (e) {
     if (!VIEW) return;
     if (pinch && e.touches.length === 2) {
       // Every frame must be computed from the gesture's starting view, not
       // from the VIEW we just wrote - otherwise the zoom compounds and the
       // pan offset is re-applied on every move.
-      var r = dist(e.touches) / Math.max(1, pinch.d);
-      var sp = Math.min(Math.max(pinch.span / r, 20 * 60000),
+      stopEdge();
+      var raw = dist(e.touches) / Math.max(1, pinch.d);
+      pinch.r = pinch.r === undefined ? raw : pinch.r * .6 + raw * .4;     // low-pass
+      var sp = Math.min(Math.max(pinch.span / pinch.r, 20 * 60000),
                         SPAN[1] - SPAN[0] + 36e5);
       var c = (pinch.v[0] + pinch.v[1]) / 2;
       var per = sp / el.clientWidth, dx = mid(e.touches) - pinch.x;
       VIEW = [c - sp / 2 - dx * per, c + sp / 2 - dx * per];
       clamp(); frame();
     } else if (e.touches.length === 1) {
-      CUR = frac(e.touches[0].clientX); frame();
+      if (Date.now() - pinchEndedAt < 350) return;
+      setCursor(e.touches[0].clientX); frame();
     }
     e.preventDefault();
   }, { passive: false });
 
   el.addEventListener("touchend", function (e) {
-    pinch = null; pan = null;
+    if (pinch) pinchEndedAt = Date.now();
+    pinch = null; pan = null; stopEdge();
     if (!e.touches.length) { setTimeout(function () { CUR = null; draw(); }, 2500); }
   }, { passive: true });
 
-  el.addEventListener("mousemove", function (e) { CUR = frac(e.clientX); frame(); });
-  el.addEventListener("mouseleave", function () { CUR = null; draw(); });
+  el.addEventListener("mousemove", function (e) {
+    if (e.buttons & 1) setCursor(e.clientX); else { CUR = frac(e.clientX); stopEdge(); }
+    frame();
+  });
+  el.addEventListener("mouseup", stopEdge);
+  el.addEventListener("mouseleave", function () { CUR = null; stopEdge(); draw(); });
 
   el.addEventListener("wheel", function (e) {
     if (!VIEW) return;
