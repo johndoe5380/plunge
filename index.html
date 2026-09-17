@@ -138,7 +138,7 @@ p.notice{margin:0 0 14px;padding:12px 14px;border-radius:9px;font-size:14.5px;li
   </div>
   <svg id="spark" viewBox="0 0 340 176"></svg>
   <div class="tiny muted" style="margin-top:6px">Drag a finger across to read values, two fingers to pan and zoom.
-    Dashed line is the model, projected forward and never corrected.</div>
+    The dashed line is the forecast: where the water goes if the plan runs as written, from the last real reading.</div>
 </div>
 
 <div class="card">
@@ -152,7 +152,7 @@ p.notice{margin:0 0 14px;padding:12px 14px;border-radius:9px;font-size:14.5px;li
 </div>
 
 <div class="card">
-  <div class="between"><div class="tiny muted">Scheduled changes</div>
+  <div class="between"><div class="tiny muted">On the chiller</div>
     <button class="tiny" style="padding:6px 11px" id="clear">Clear all</button></div>
   <table id="timers"></table>
   <div class="row" style="margin-top:14px;flex-wrap:wrap">
@@ -722,7 +722,7 @@ async function chart() {
   }]);
   var planEnd = dev && dev.ctl && dev.ctl.plan && dev.ctl.plan.holdUntil ? dev.ctl.plan.holdUntil + 36e5 : 0;
   SPAN = [HIST.t0, Math.max(Date.now() + 3 * 36e5, planEnd)];
-  if (!VIEW) VIEW = [Math.max(HIST.t0, Date.now() - 12 * 36e5), Date.now()];
+  if (!VIEW) VIEW = [Math.max(HIST.t0, Date.now() - 9 * 36e5), Date.now() + 3 * 36e5];
   draw();
 }
 
@@ -1358,7 +1358,7 @@ async function planLoad() {
   if (!c || !c.enabled) bits.push(dot(false) + "Controller <b>off</b> \u2014 chiller on its own thermostat");
   else if (c.dry_run) bits.push(dot(false, true) + "Controller in <b>dry run</b> \u2014 decides, never writes");
   else if (hb === null || hb > 3) bits.push(dot(false) + "Controller <b>silent</b>" + (hb ? " for " + hb.toFixed(0) + " min" : ""));
-  else bits.push(dot(true) + "Controller alive \u00b7 " + (dev.ctl.phase || "") + (L ? " \u00b7 " + L.reason.replace(/^\[dry\] /, "").replace(/^\[[a-z]+\] /, "").slice(0, 70) : ""));
+  else bits.push(dot(true) + "Controller alive, " + (dev.ctl.phase || "") + (L ? ". " + L.reason.replace(/^\[dry\] /, "").replace(/^\[[a-z]+\] /, "").slice(0, 70) : ""));
   // 2. does it know the water temperature?
   var pa = dev && dev.probes ? dev.probes.age_min : null;
   if (pa === null || pa === undefined) bits.push(dot(false) + "No tub probe data");
@@ -1368,8 +1368,8 @@ async function planLoad() {
   var plan = (dev && dev.timers || []).filter(function (t) { return t.category === "plan"; });
   if (!plan.length) bits.push(dot(false, true) + "No timers on the chiller \u2014 pulldown depends on the cloud");
   else bits.push(dot(true) + "On the chiller: " + plan.map(function (t) {
-    return hhmm(t.time) + "\u2192" + t.value + "\u00B0";
-  }).join(", "));
+    return hhmm(t.time) + " to " + t.value + "\u00B0";
+  }).join(", then "));
   // 4. does the device match the controller's intent?
   if (L && dev && dev.ctl && dev.ctl.phase === "cool" && Number(dev.temp_set_f) !== Number(L.setpoint) &&
       !/\[timers\]/.test(L.reason))
