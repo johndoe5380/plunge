@@ -413,6 +413,7 @@ function paint() {
     $("probeCard").className = "card hide";
   }
   $("foot").textContent = "Updated " + new Date(dev.at).toLocaleTimeString();
+  if (PLAN) planLoad();
 }
 
 async function refresh() {
@@ -1297,12 +1298,33 @@ async function planLoad() {
 
   // what the planner intends right now - the reason string from its last run
   var c = PLAN.control, L = PLAN.last;
+  var dot = function (ok, warn) {
+    var col = ok ? "#5DCAA5" : (warn ? "#d99a4e" : "#d97b6c");
+    return '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;' +
+           'background:' + col + ';margin-right:7px;vertical-align:1px"></span>';
+  };
   var bits = [];
-  if (!c || !c.enabled) bits.push("Planner is off \u2014 the chiller runs on its own thermostat.");
-  else {
-    if (c.dry_run) bits.push("<span style='color:#d99a4e'>Dry run</span> \u2014 deciding but not writing.");
-    if (L) bits.push(L.reason.replace(/^\[dry\] /, ""));
-  }
+  // 1. is the thing that acts alive?
+  var hb = dev && dev.ctl && dev.ctl.heartbeat_ms ? (Date.now() - dev.ctl.heartbeat_ms) / 60000 : null;
+  if (!c || !c.enabled) bits.push(dot(false) + "Controller <b>off</b> \u2014 chiller on its own thermostat");
+  else if (c.dry_run) bits.push(dot(false, true) + "Controller in <b>dry run</b> \u2014 decides, never writes");
+  else if (hb === null || hb > 3) bits.push(dot(false) + "Controller <b>silent</b>" + (hb ? " for " + hb.toFixed(0) + " min" : ""));
+  else bits.push(dot(true) + "Controller alive \u00b7 " + (dev.ctl.phase || "") + (L ? " \u00b7 " + L.reason.replace(/^\[dry\] /, "").replace(/^\[[a-z]+\] /, "").slice(0, 70) : ""));
+  // 2. does it know the water temperature?
+  var pa = dev && dev.probes ? dev.probes.age_min : null;
+  if (pa === null || pa === undefined) bits.push(dot(false) + "No tub probe data");
+  else if (pa > 10) bits.push(dot(false, true) + "Tub probe stale " + pa.toFixed(0) + " min \u2014 using chiller reading");
+  else bits.push(dot(true) + "Tub probe live");
+  // 3. does the chiller hold the plan even if everything else dies?
+  var plan = (dev && dev.timers || []).filter(function (t) { return t.category === "plan"; });
+  if (!plan.length) bits.push(dot(false, true) + "No timers on the chiller \u2014 pulldown depends on the cloud");
+  else bits.push(dot(true) + "On the chiller: " + plan.map(function (t) {
+    return hhmm(t.time) + "\u2192" + t.value + "\u00B0";
+  }).join(", "));
+  // 4. does the device match the controller's intent?
+  if (L && dev && dev.ctl && dev.ctl.phase === "cool" && Number(dev.temp_set_f) !== Number(L.setpoint) &&
+      !/\[timers\]/.test(L.reason))
+    bits.push(dot(false) + "Chiller setpoint " + dev.temp_set_f + " but controller wants " + L.setpoint);
   $("planNow").innerHTML = bits.join("<br>");
   if ($("slotEdit").innerHTML === "") SLOT = null;
 }
