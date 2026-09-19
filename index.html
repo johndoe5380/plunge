@@ -1556,7 +1556,7 @@ function drawSlot() {
       '<div class="fld"><label class="tiny muted">Name</label>' +
         '<input id="slLabel" value="' + (SLOT.label || "") + '"></div>' +
     '</div>' +
-    '<div class="tiny muted" style="margin:10px 0 6px">Days</div>' +
+    '<div class="tiny muted" style="margin:10px 0 6px">Days \u2014 tap to select</div>' +
     '<div class="row" style="gap:6px;flex-wrap:wrap">' +
       DAYNAME.map(function (d, i) {
         var on = (SLOT.days || []).indexOf(i) >= 0;
@@ -1573,6 +1573,10 @@ function drawSlot() {
     '</div><div class="tiny muted" id="slMsg" style="margin-top:8px"></div></div>';
 }
 function tglDay(i) {
+  // keep whatever was typed before re-rendering, or a tap on a day erases it
+  if ($("slTime")) SLOT.at_time = $("slTime").value || SLOT.at_time;
+  if ($("slF")) SLOT.target_f = +$("slF").value || SLOT.target_f;
+  if ($("slLabel")) SLOT.label = $("slLabel").value;
   SLOT.days = SLOT.days || [];
   var at = SLOT.days.indexOf(i);
   if (at >= 0) SLOT.days.splice(at, 1); else SLOT.days.push(i);
@@ -1580,8 +1584,10 @@ function tglDay(i) {
 }
 async function saveSlot() {
   var t = $("slTime").value, f = +$("slF").value;
-  if (!t || !isFinite(f)) { $("slMsg").textContent = "need a time and a temperature"; return; }
-  if (!SLOT.days || !SLOT.days.length) { $("slMsg").textContent = "pick at least one day"; return; }
+  $("slMsg").style.color = "var(--red)";
+  if (!t || !isFinite(f)) { $("slMsg").textContent = "Set a time and a temperature."; return; }
+  if (!SLOT.days || !SLOT.days.length) { $("slMsg").textContent = "Tap at least one day below."; return; }
+  $("slMsg").style.color = "";
   $("slMsg").textContent = "saving\u2026";
   var q = { at: t, f: f, label: $("slLabel").value || "Plunge",
             days: JSON.stringify(SLOT.days.slice().sort(function(a,b){return a-b})), on: "1" };
