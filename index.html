@@ -172,18 +172,8 @@ p.notice{margin:0 0 14px;padding:12px 14px;border-radius:9px;font-size:14.5px;li
 
 <div class="card">
   <div class="tiny muted">On the chiller</div>
-  <div class="tiny muted" style="margin:4px 0 8px">What the controller has written to the chiller itself. Change plunges above, not here.</div>
+  <div class="tiny muted" style="margin:4px 0 8px">Read-only. These are the commands the controller has written to the chiller for the plunges you scheduled above. Nothing to set here.</div>
   <table id="timers"></table>
-  <div class="row" style="margin-top:14px;flex-wrap:wrap">
-    <input type="date" id="d" style="flex:1 1 140px">
-    <input type="time" id="t" style="flex:1 1 104px">
-    <input type="number" id="v" min="36" max="122" value="48" style="width:78px">
-    <button class="pill" id="add" style="flex:1 1 92px">Add</button>
-  </div>
-  <div class="tiny muted" style="margin-top:10px">
-    Sets the target at that time. The compressor only restarts once the water is
-    5&deg;F above target, so it stops where you send it rather than overshooting.
-  </div>
 </div>
 
 </div><!-- /pane-chiller -->
@@ -505,12 +495,6 @@ $("power").onclick = async () => {
   $("writeMsg").textContent = "Chiller is " + (dev.switch ? "on" : "off");
 };
 
-$("add").onclick = async () => {
-  const d = $("d").value, t = $("t").value, v = $("v").value;
-  if (!d || !t) return alert("Pick a date and time");
-  await api("addTimer", { date: d.replaceAll("-", ""), time: t, f: v });
-  refresh();
-};
 
 /* The probe sits in the chiller loop and reports whole degrees, so the raw
    trace is a staircase with bursts of flicker where the water sits on a
@@ -1288,8 +1272,6 @@ async function waterLoad() {
   });
 });
 
-const today = new Date();
-$("d").value = today.toISOString().slice(0, 10);
 refresh(); chart();
 setInterval(refresh, 30000);
 setInterval(chart, 300000);
