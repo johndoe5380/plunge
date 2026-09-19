@@ -1488,7 +1488,9 @@ async function planLoad() {
   });
   $("slots").innerHTML = rows.length ? rows.map(function (s) {
     var days = (s.days || []).slice().sort(function(x,y){return x-y});
-    var lbl = days.length === 7 ? "every day"
+    var lbl = s.on_date
+            ? "once, " + new Date(s.on_date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+            : days.length === 7 ? "every day"
             : days.map(function (d) { return DAYNAME[d]; }).join(" ");
     var t = String(s.at_time).slice(0, 5);
     return '<tr style="opacity:' + (s.enabled ? 1 : .45) + '">' +
@@ -1538,7 +1540,14 @@ function hhmm(t) {
   return hh + ":" + m + " " + ap;
 }
 
-function addSlot() { SLOT = { id: null, label: "Plunge", at_time: "18:30", target_f: 45, days: [], enabled: true }; drawSlot(); }
+function addSlot() { SLOT = { id: null, label: "Plunge", at_time: "18:30", target_f: 45, days: [], on_date: null, enabled: true }; drawSlot(); }
+function setOnce(once) {
+  if ($("slTime")) SLOT.at_time = $("slTime").value || SLOT.at_time;
+  if ($("slF")) SLOT.target_f = +$("slF").value || SLOT.target_f;
+  if (once) { SLOT.days = []; SLOT.on_date = SLOT.on_date || new Date(Date.now() + 864e5).toISOString().slice(0, 10); }
+  else SLOT.on_date = null;
+  drawSlot();
+}
 function editSlot(id) {
   SLOT = (PLAN.schedule || []).find(function (x) { return x.id === id; });
   if (SLOT) { SLOT = JSON.parse(JSON.stringify(SLOT)); SLOT.at_time = String(SLOT.at_time).slice(0,5); }
@@ -1556,7 +1565,13 @@ function drawSlot() {
       '<div class="fld"><label class="tiny muted">Name</label>' +
         '<input id="slLabel" value="' + (SLOT.label || "") + '"></div>' +
     '</div>' +
-    '<div class="tiny muted" style="margin:10px 0 6px">Days \u2014 tap to select</div>' +
+    '<div class="row" style="gap:6px;margin:12px 0 8px">' +
+      '<button class="ghost tiny" onclick="setOnce(false)" style="' + (SLOT.on_date ? "" : "border-color:var(--water);color:var(--water)") + '">Weekly</button>' +
+      '<button class="ghost tiny" onclick="setOnce(true)" style="' + (SLOT.on_date ? "border-color:var(--water);color:var(--water)" : "") + '">Just once</button>' +
+    '</div>' +
+    (SLOT.on_date
+      ? '<div class="fld sm"><label class="tiny muted">On</label><input type="date" id="slDate" value="' + SLOT.on_date + '"></div>'
+      : '<div class="tiny muted" style="margin:0 0 6px">Days \u2014 tap to select</div>' +
     '<div class="row" style="gap:6px;flex-wrap:wrap">' +
       DAYNAME.map(function (d, i) {
         var on = (SLOT.days || []).indexOf(i) >= 0;
@@ -1564,7 +1579,7 @@ function drawSlot() {
           'style="min-width:40px;' + (on ? "border-color:var(--ice);color:var(--ice)" : "") + '">' +
           d + '</button>';
       }).join("") +
-    '</div>' +
+    '</div>') +
     '<div class="row" style="gap:10px;margin-top:14px">' +
       '<button class="pill" onclick="saveSlot()">Save</button>' +
       '<button class="ghost tiny" onclick="SLOT=null;drawSlot()">Cancel</button>' +
@@ -1586,11 +1601,13 @@ async function saveSlot() {
   var t = $("slTime").value, f = +$("slF").value;
   $("slMsg").style.color = "var(--red)";
   if (!t || !isFinite(f)) { $("slMsg").textContent = "Set a time and a temperature."; return; }
-  if (!SLOT.days || !SLOT.days.length) { $("slMsg").textContent = "Tap at least one day below."; return; }
+  var date = $("slDate") ? $("slDate").value : null;
+  if (!date && (!SLOT.days || !SLOT.days.length)) { $("slMsg").textContent = "Tap at least one day, or choose Just once."; return; }
   $("slMsg").style.color = "";
   $("slMsg").textContent = "saving\u2026";
   var q = { at: t, f: f, label: $("slLabel").value || "Plunge",
-            days: JSON.stringify(SLOT.days.slice().sort(function(a,b){return a-b})), on: "1" };
+            days: JSON.stringify(date ? [] : SLOT.days.slice().sort(function(a,b){return a-b})), on: "1" };
+  if (date) q.date = date;
   if (SLOT.id) q.id = SLOT.id;
   await api("saveSlot", q);
   SLOT = null; drawSlot(); await planLoad();
