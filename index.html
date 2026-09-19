@@ -507,10 +507,6 @@ $("add").onclick = async () => {
   await api("addTimer", { date: d.replaceAll("-", ""), time: t, f: v });
   refresh();
 };
-$("clear").onclick = async () => {
-  if (!confirm("Remove all scheduled changes?")) return;
-  await api("clearTimers"); refresh();
-};
 
 /* The probe sits in the chiller loop and reports whole degrees, so the raw
    trace is a staircase with bursts of flicker where the water sits on a
