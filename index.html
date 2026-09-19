@@ -428,7 +428,7 @@ function paint() {
   var isOff = fresh && /^Behind schedule|Controller stopped/.test(ctl.status);
   $("status").style.color = isOff ? "var(--red)" : "";
   var pl = ctl && ctl.plan, ahead = pl && pl.plungeAt ? (pl.plungeAt - Date.now()) / 36e5 : null;
-  $("skipRow").className = pl && pl.plungeAt && ahead < 14 && ahead > -2 && pl.phase !== "coast-only" ? "" : "hide";
+  $("skipRow").className = pl && pl.plungeAt && ahead < 14 && ahead > -2 ? "" : "hide";
   if (pl && pl.plungeAt) $("skipBtn").textContent = "Skip the " + new Date(pl.plungeAt)
     .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " plunge";
   var subs = [];
@@ -548,7 +548,7 @@ function forecast(tEnd) {
   for (t += step; t <= end && pts.length < 2000; t += step) {
     var on = false;
     if (target !== null) {
-      var inRun = (plan.phase === "cool" || plan.phase === "hold" || (coolAt && t >= coolAt)) &&
+      var inRun = (plan.phase === "cool" || (coolAt && t >= coolAt)) &&
                   (!holdUntil || t <= holdUntil);
       if (inRun) on = T > target;
       if (inRun && !on) { T = target; pts.push({ t: t, v: T }); continue; }
@@ -1496,7 +1496,7 @@ async function planLoad() {
   if (!c || !c.enabled) bits.push(dot(false) + "Controller <b>off</b> \u2014 chiller on its own thermostat");
   else if (c.dry_run) bits.push(dot(false, true) + "Controller in <b>dry run</b> \u2014 decides, never writes");
   else if (hb === null || hb > 3) bits.push(dot(false) + "Controller <b>silent</b>" + (hb ? " for " + hb.toFixed(0) + " min" : ""));
-  else bits.push(dot(true) + "Controller alive, " + (dev.ctl.phase || "") + (L ? ". " + L.reason.replace(/^\[dry\] /, "").replace(/^\[[a-z]+\] /, "").slice(0, 70) : ""));
+  else bits.push(dot(true) + "Controller alive" + (dev.ctl.phase === "cool" ? ", cooling" : dev.ctl.phase === "idle" ? ", idle" : "") + (L ? ". " + L.reason.replace(/^\[dry\] /, "").replace(/^\[[a-z]+\] /, "").slice(0, 70) : ""));
   // 2. does it know the water temperature?
   var pa = dev && dev.probes ? dev.probes.age_min : null;
   if (pa === null || pa === undefined) bits.push(dot(false) + "No tub probe data");
@@ -1508,10 +1508,9 @@ async function planLoad() {
   else bits.push(dot(true) + "On the chiller: " + plan.map(function (t) {
     return hhmm(t.time) + " to " + t.value + "\u00B0";
   }).join(", then "));
-  // 4. does the device match the controller's intent?
-  if (L && dev && dev.ctl && dev.ctl.phase === "cool" && Number(dev.temp_set_f) !== Number(L.setpoint) &&
-      !/\[timers\]/.test(L.reason))
-    bits.push(dot(false) + "Chiller setpoint " + dev.temp_set_f + " but controller wants " + L.setpoint);
+  // 4. (removed) The timer-only controller writes dated timers, not the live
+  //     setpoint, so the device setpoint legitimately differs from any logged
+  //     action between pulldowns. A setpoint-vs-intent check would false-alarm.
   $("planNow").innerHTML = bits.join("<br>");
   if ($("slotEdit").innerHTML === "") SLOT = null;
 }
