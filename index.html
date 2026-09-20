@@ -1301,7 +1301,7 @@ function waterNow() {
   return [null, null];
 }
 var PT = { target: 180, left: 180, running: false, t0: null, startTemp: null, id: null,
-           lead: 10, leading: false, leadId: null };
+           lead: 10, leading: false, leadDone: false, leadId: null };
 try { var _l = localStorage.getItem("pt_lead"); if (_l !== null) PT.lead = Number(_l); } catch (e) {}
 function leadLabel() { $("ptLead").textContent = PT.lead ? "countdown " + PT.lead + "s" : "no countdown"; }
 function cycleLead() {
@@ -1429,11 +1429,11 @@ async function ptStart() {
 
 async function ptEnd(completed) {
   if (PT.leading) {   // stopped during the countdown: nothing to log
-    clearInterval(PT.leadId); PT.leading = false;
+    clearInterval(PT.leadId); PT.leading = false; PT.leadDone = false;
     $("ptGo").className = "pill"; $("ptStop").className = "pill hide";
     $("ptSub").textContent = ""; drawDial(); return;
   }
-  clearInterval(PT.id); PT.running = false;
+  clearInterval(PT.id); PT.running = false; PT.leadDone = false;
   var secs = Math.round((Date.now() - PT.t0) / 1000);
   $("ptGo").className = "pill"; $("ptStop").className = "pill hide";
   PT.left = PT.target; drawDial();
