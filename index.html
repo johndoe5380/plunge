@@ -1393,8 +1393,10 @@ function beep(times) {
 }
 
 async function ptStart() {
-  // a get-in countdown first, so you can set it before you are in the water
-  if (PT.lead > 0 && !PT.leading) {
+  // a get-in countdown first, so you can set it before you are in the water.
+  // leadDone guards this branch: after the countdown ends, ptStart() is called
+  // again and MUST fall through to the real timer, not re-enter the countdown.
+  if (PT.lead > 0 && !PT.leading && !PT.leadDone) {
     PT.leading = true;
     var n = PT.lead;
     $("ptGo").className = "pill hide"; $("ptStop").className = "pill";
@@ -1404,7 +1406,7 @@ async function ptStart() {
     PT.leadId = setInterval(function () {
       n--;
       if (n > 0) { $("ptClock").textContent = n; if (n <= 3) beep(1); return; }
-      clearInterval(PT.leadId); PT.leading = false; beep(2);
+      clearInterval(PT.leadId); PT.leading = false; PT.leadDone = true; beep(2);
       ptStart();
     }, 1000);
     return;
