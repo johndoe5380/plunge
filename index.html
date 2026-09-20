@@ -387,14 +387,16 @@ function saveKey() {
   try { localStorage.setItem("plunge_k", v); } catch (e) {}
   location.reload();
 }
-async function skipPlunge() {
-  var pl = dev && dev.ctl && dev.ctl.plan;
-  if (!pl || !pl.plungeAt) return;
-  var when = new Date(pl.plungeAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (!confirm("Skip the " + when + " plunge? The chiller will coast and the next one will be planned instead.")) return;
-  $("skipBtn").disabled = true; $("skipBtn").textContent = "skipping\u2026";
-  await api("skip", { at: String(pl.plungeAt) });
-  setTimeout(refresh, 1500);
+async function skipPlunge(at, when) {
+  if (!at) return;
+  if (!confirm("Skip the " + when + " plunge? It won\u2019t be cooled for. Recurring plunges still happen after this one.")) return;
+  await api("skip", { at: String(at) });
+  await planLoad();
+}
+async function unskipPlunge(at) {
+  if (!at) return;
+  await api("unskip", { at: String(at) });
+  await planLoad();
 }
 function signOut() {
   try { localStorage.removeItem("plunge_k"); } catch (e) {}
@@ -409,8 +411,9 @@ function paint() {
   const cur = dev.temp_current_f, set = pending ?? dev.temp_set_f;
   var pr = dev.probes;
   var live = pr && pr.tub !== null && pr.tub !== undefined && pr.age_min !== null && pr.age_min < 10;
-  var shown = live ? pr.tub : cur;
-  $("cur").textContent = live ? pr.tub.toFixed(1) : cur;
+  var chStale0 = dev.chiller_age_min === null || dev.chiller_age_min === undefined || dev.chiller_age_min > 20;
+  var shown = live ? pr.tub : (chStale0 ? null : cur);
+  $("cur").textContent = live ? pr.tub.toFixed(1) : (chStale0 ? "\u2014" : cur);
   $("cur").className = "temp" + (shown > 55 ? " warm" : "");
   $("heroLabel").textContent = live ? "Water" : "Water, from the chiller\u2019s own sensor";
   $("set").textContent = set + "\u00B0";
@@ -419,18 +422,22 @@ function paint() {
   $("power").className = "pill" + (dev.switch ? " on" : "");
 
   // the sentence the controller wrote on its last run; fall back to the chiller
-  var cooling = dev.switch && cur > dev.temp_set_f;
+  // Is the chiller actually reachable? The server stamps chiller_age_min when it
+  // last got a live reading. If that's stale (unplugged / offline), say so plainly
+  // rather than showing a dead number as if it were current.
+  var chillerStale = dev.chiller_age_min === null || dev.chiller_age_min === undefined || dev.chiller_age_min > 20;
+  var cooling = dev.switch && !chillerStale && cur > dev.temp_set_f;
   var ctl = dev.ctl, fresh = ctl && ctl.status && ctl.status_ms && (Date.now() - ctl.status_ms) < 10 * 60000;
-  $("status").textContent = !dev.switch ? "The chiller is off, pump and filter too."
+  $("status").textContent = chillerStale
+      ? (live ? "Chiller offline (unplugged or no network). Water is " + pr.tub.toFixed(1) + "\u00B0 from the probe."
+              : "Chiller offline and no probe reading. Temperature unknown.")
+    : !dev.switch ? "The chiller is off, pump and filter too."
     : fresh ? ctl.status
     : cooling ? "Cooling. The chiller will stop at " + dev.temp_set_f + "\u00B0 on its own sensor."
     : "Coasting. The chiller restarts itself at " + (dev.temp_set_f + 5) + "\u00B0.";
   var isOff = fresh && /^Behind schedule|Controller stopped/.test(ctl.status);
   $("status").style.color = isOff ? "var(--red)" : "";
-  var pl = ctl && ctl.plan, ahead = pl && pl.plungeAt ? (pl.plungeAt - Date.now()) / 36e5 : null;
-  $("skipRow").className = pl && pl.plungeAt && ahead < 14 && ahead > -2 ? "" : "hide";
-  if (pl && pl.plungeAt) $("skipBtn").textContent = "Skip the " + new Date(pl.plungeAt)
-    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " plunge";
+  $("skipRow").className = "hide";   // skip now lives per-plunge in the schedule list
   var subs = [];
   if (live) subs.push("chiller reads " + cur + "\u00B0");
   if (pr && pr.ambient !== null && pr.ambient !== undefined) subs.push("room " + pr.ambient.toFixed(0) + "\u00B0");
@@ -1351,6 +1358,7 @@ function drawDial() {
   function disarm() { ARMED = false; el.classList.add("idle"); if (!PT.running) $("ptSub").textContent = "tap the dial to change the time"; }
   el.classList.add("idle");
   el.addEventListener("pointerdown", function (e) {
+    if (PT.running || PT.leading) return;   // dial is inert during run and get-in countdown
     if (!ARMED) {
       ARMED = true; el.classList.remove("idle");
       $("ptSub").textContent = "drag to set, then start";
@@ -1475,12 +1483,18 @@ async function planLoad() {
             : days.length === 7 ? "every day"
             : days.map(function (d) { return DAYNAME[d]; }).join(" ");
     var t = String(s.at_time).slice(0, 5);
+    var nextTxt = s.next_at ? new Date(s.next_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "";
+    var skipCell = !s.next_at ? "" :
+      s.skipped
+        ? '<span class="tiny" style="color:var(--model)">skipping ' + nextTxt + '</span> ' +
+          '<button class="ghost tiny" onclick="unskipPlunge(' + s.next_at + ')">undo</button>'
+        : '<button class="ghost tiny" onclick="skipPlunge(' + s.next_at + ',\'' + nextTxt + '\')">skip ' + nextTxt + '</button>';
     return '<tr style="opacity:' + (s.enabled ? 1 : .45) + '">' +
       '<td style="padding:5px 0">' + hhmm(t) + '</td>' +
       '<td class="tiny muted">' + lbl + '</td>' +
       '<td style="text-align:right">' + (+s.target_f).toFixed(0) + '\u00B0</td>' +
-      '<td style="text-align:right;width:44px">' +
-        '<button class="ghost tiny" onclick="editSlot(' + s.id + ')">edit</button></td></tr>';
+      '<td style="text-align:right;white-space:nowrap">' + skipCell +
+        ' <button class="ghost tiny" onclick="editSlot(' + s.id + ')">edit</button></td></tr>';
   }).join("") : "<tr><td class='muted tiny'>No plunges scheduled</td></tr>";
 
   // what the planner intends right now - the reason string from its last run
