@@ -411,9 +411,9 @@ function paint() {
   const cur = dev.temp_current_f, set = pending ?? dev.temp_set_f;
   var pr = dev.probes;
   var live = pr && pr.tub !== null && pr.tub !== undefined && pr.age_min !== null && pr.age_min < 10;
-  var chStale0 = dev.chiller_age_min === null || dev.chiller_age_min === undefined || dev.chiller_age_min > 20;
-  var shown = live ? pr.tub : (chStale0 ? null : cur);
-  $("cur").textContent = live ? pr.tub.toFixed(1) : (chStale0 ? "\u2014" : cur);
+  var chOffline = dev.chiller_online === false;   // Tuya's own flag; null = unknown, treat as online
+  var shown = live ? pr.tub : (chOffline ? null : cur);
+  $("cur").textContent = live ? pr.tub.toFixed(1) : (chOffline ? "\u2014" : cur);
   $("cur").className = "temp" + (shown > 55 ? " warm" : "");
   $("heroLabel").textContent = live ? "Water" : "Water, from the chiller\u2019s own sensor";
   $("set").textContent = set + "\u00B0";
@@ -425,7 +425,7 @@ function paint() {
   // Is the chiller actually reachable? The server stamps chiller_age_min when it
   // last got a live reading. If that's stale (unplugged / offline), say so plainly
   // rather than showing a dead number as if it were current.
-  var chillerStale = dev.chiller_age_min === null || dev.chiller_age_min === undefined || dev.chiller_age_min > 20;
+  var chillerStale = dev.chiller_online === false;
   var cooling = dev.switch && !chillerStale && cur > dev.temp_set_f;
   var ctl = dev.ctl, fresh = ctl && ctl.status && ctl.status_ms && (Date.now() - ctl.status_ms) < 10 * 60000;
   $("status").textContent = chillerStale
