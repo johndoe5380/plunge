@@ -4,7 +4,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="build" content="20260919-010251">
+  <meta name="build" content="20260922020151">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#EEF3F4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0D1A1E" media="(prefers-color-scheme: dark)">
@@ -102,22 +102,38 @@ p.notice{margin:0 0 14px;padding:12px 14px;border-radius:9px;font-size:14.5px;li
   <div><span class="temp" id="cur">--</span><span class="unit">&deg;F</span></div>
   <p id="status"></p>
   <div class="tiny muted" id="sub"></div>
-  <div id="skipRow" class="hide" style="margin-top:12px">
-    <button class="ghost tiny" id="skipBtn" onclick="skipPlunge()" style="border-color:var(--rule);padding:7px 12px">Skip this plunge</button>
-  </div>
+  <div id="nextRow" class="tiny" style="margin-top:12px;line-height:1.6"></div>
 </div>
 
 <div class="card">
-  <div class="tiny muted" style="margin-bottom:6px">Target</div>
-  <div class="between">
-    <div class="row">
-      <button class="step" id="minus">&minus;</button>
-      <div class="set" id="set">--</div>
-      <button class="step" id="plus">+</button>
-    </div>
-    <button class="pill" id="power">&nbsp;</button>
+  <div class="between" style="margin-bottom:8px">
+    <div class="tiny muted">Chiller power</div>
+    <div class="tiny muted" id="pwrMeta"></div>
   </div>
-  <div class="tiny muted" id="writeMsg" style="margin-top:6px"></div>
+  <div class="between">
+    <div class="row" style="gap:16px;align-items:baseline">
+      <div><span class="big" id="watts">--</span><span class="tiny muted" style="margin-left:5px">W</span></div>
+      <div class="tiny muted" id="kwh"></div>
+    </div>
+    <div class="row" style="gap:8px">
+      <button class="pill" id="ovOn">On 2h</button>
+      <button class="pill" id="ovOff">Off 2h</button>
+      <button class="ghost tiny hide" id="ovClear">release</button>
+    </div>
+  </div>
+  <div class="tiny muted" id="ovMsg" style="margin-top:8px;min-height:1.4em"></div>
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--rule)">
+    <div class="between">
+      <div><div style="font-size:14.5px">Automatic control</div><div class="tiny muted" id="autoSub"></div></div>
+      <button class="pill" id="autoBtn">&nbsp;</button>
+    </div>
+    <div class="row" style="gap:12px;margin-top:12px;align-items:flex-end;flex-wrap:wrap">
+      <div class="fld sm"><label>Power on at &deg;F</label><input type="number" id="holdOn" step="1" min="48" max="70"></div>
+      <div class="fld sm"><label>Power off at &deg;F</label><input type="number" id="holdOff" step="1" min="40" max="65"></div>
+      <div class="fld sm"><label>Panel is set to</label><input type="number" id="panelF" step="1" min="36" max="70"></div>
+    </div>
+    <div class="tiny muted" id="holdNote" style="margin-top:10px;line-height:1.5"></div>
+  </div>
 </div>
 
 <div class="card">
@@ -151,13 +167,13 @@ p.notice{margin:0 0 14px;padding:12px 14px;border-radius:9px;font-size:14.5px;li
       <button class="rng" data-h="6">6h</button>
       <button class="rng" data-h="24">1d</button>
       <button class="rng" data-h="72">3d</button>
-      <button class="rng" data-h="all">all</button>
+      <button class="rng" data-h="168">1w</button>
       <button class="rng" data-h="plunge">to plunge</button>
     </div>
   </div>
   <svg id="spark" viewBox="0 0 340 176"></svg>
-  <div class="tiny muted" style="margin-top:6px">Drag a finger across to read values; hold it at either edge and the window slides that way. Pinch to zoom.
-    The dashed line is the forecast: where the water goes if the plan runs as written, from the last real reading.</div>
+  <div class="tiny muted" style="margin-top:6px">Shaded bands are when the compressor was actually running, from the plug&rsquo;s meter.
+    The dashed line is the forecast from the last reading, following what the controller will do. Drag to read values, pinch to zoom.</div>
 </div>
 
 <div class="card">
@@ -170,14 +186,7 @@ p.notice{margin:0 0 14px;padding:12px 14px;border-radius:9px;font-size:14.5px;li
   <div id="slotEdit"></div>
 </div>
 
-<div class="card">
-  <div class="tiny muted">On the chiller</div>
-  <div class="tiny muted" style="margin:4px 0 8px">Read-only. These are the commands the controller has written to the chiller for the plunges you scheduled above. Nothing to set here.</div>
-  <table id="timers"></table>
-</div>
-
 </div><!-- /pane-chiller -->
-
 <div id="pane-water" class="hide">
   <div class="card">
     <div class="tiny muted" style="margin-bottom:12px">Your tub</div>
@@ -389,14 +398,14 @@ function saveKey() {
 }
 async function skipPlunge(at, when) {
   if (!at) return;
-  if (!confirm("Skip the " + when + " plunge? It won\u2019t be cooled for. Recurring plunges still happen after this one.")) return;
+  if (!confirm("Skip the " + when + " plunge? The chiller won\u2019t cool for it; the water just holds. Later plunges are unaffected.")) return;
   await api("skip", { at: String(at) });
-  await planLoad();
+  await planLoad(); await refresh();
 }
 async function unskipPlunge(at) {
   if (!at) return;
   await api("unskip", { at: String(at) });
-  await planLoad();
+  await planLoad(); await refresh();
 }
 function signOut() {
   try { localStorage.removeItem("plunge_k"); } catch (e) {}
@@ -404,168 +413,347 @@ function signOut() {
 }
 const $ = id => document.getElementById(id);
 
-let dev = null, pending = null, timer = null, busy = false;
+/* ---------------- state: the tub pane ----------------
+   One call (action=state) carries the water, the plug's meter, the last
+   controller tick and what the controller intends right now. */
+var ST = null;
+
+function fmtWhen(ms, withDay) {
+  var d = new Date(ms), now = new Date();
+  var t = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (!withDay) return t;
+  var sameDay = d.toDateString() === now.toDateString();
+  var tmrw = new Date(now.getTime() + 864e5).toDateString() === d.toDateString();
+  return (sameDay ? "" : tmrw ? "tomorrow " : d.toLocaleDateString(undefined, { weekday: "short" }) + " ") + t;
+}
+function fmtDur(ms) {
+  var m = Math.round(Math.abs(ms) / 60000);
+  if (m < 60) return m + " min";
+  var h = Math.floor(m / 60), r = m % 60;
+  return h + "h" + (r ? String(r).padStart(2, "0") : "");
+}
+
+function statusSentence() {
+  var p = ST.plan, c = ST.ctl, w = ST.water, plug = ST.plug;
+  var nx = p.next;
+  var s = "";
+  if (!plug) return "No word from the plug yet.";
+  if (!c.enabled) {
+    s = "Automatic control is off. The chiller " + (plug.on ? "has power and runs on its own thermostat." : "is unplugged by the smart plug.");
+  } else if (p.phase === "fault") {
+    s = p.why.charAt(0).toUpperCase() + p.why.slice(1) + ".";
+  } else if (p.phase === "override") {
+    s = "Manual: power " + (c.override.on ? "on" : "off") + " until " + fmtWhen(c.override.until, true) + ", then back to automatic.";
+  } else if (p.phase === "plunge") {
+    s = nx.label + " — water is ready. Chiller stays on until " + fmtWhen(nx.at + ST.settings.plunge_window_min * 60000) + ".";
+  } else if (p.phase === "pulldown") {
+    var eta = p.eta_at;
+    if (w && w.f <= nx.target_f) s = "Ready for " + nx.label + " at " + fmtWhen(nx.at, true) + ". Holding cold.";
+    else if (eta && eta > nx.at + 5 * 60000) s = "Cooling for " + nx.label + ", behind schedule — water should reach " + nx.target_f + "° about " + fmtDur(eta - nx.at) + " after " + fmtWhen(nx.at) + ".";
+    else s = "Cooling for " + nx.label + " at " + fmtWhen(nx.at, true) + "." + (eta ? " Should reach " + nx.target_f + "° around " + fmtWhen(eta) + "." : "");
+  } else if (p.phase === "hold-cool") {
+    s = "Holding. Cooling to " + c.hold_off_f + "°, then the plug turns off.";
+  } else {
+    s = "Holding. Plug off; the water warms slowly and the chiller comes back on at " + c.hold_on_f + "°.";
+  }
+  if (c.dry_run && c.enabled) s += " (Dry run — deciding, not switching.)";
+  return s;
+}
 
 function paint() {
-  if (!dev) return;
-  const cur = dev.temp_current_f, set = pending ?? dev.temp_set_f;
-  var pr = dev.probes;
-  var live = pr && pr.tub !== null && pr.tub !== undefined && pr.age_min !== null && pr.age_min < 10;
-  var chOffline = dev.chiller_online === false;   // Tuya's own flag; null = unknown, treat as online
-  var shown = live ? pr.tub : (chOffline ? null : cur);
-  $("cur").textContent = live ? pr.tub.toFixed(1) : (chOffline ? "\u2014" : cur);
-  $("cur").className = "temp" + (shown > 55 ? " warm" : "");
-  $("heroLabel").textContent = live ? "Water" : "Water, from the chiller\u2019s own sensor";
-  $("set").textContent = set + "\u00B0";
-  $("set").className = "set" + (pending !== null && pending !== dev.temp_set_f ? " dirty" : "");
-  $("power").textContent = dev.switch ? "On" : "Off";
-  $("power").className = "pill" + (dev.switch ? " on" : "");
+  if (!ST) return;
+  var w = ST.water, plug = ST.plug, c = ST.ctl, p = ST.plan, tk = ST.tick;
+  var live = w && w.age_min < 10;
+  $("cur").textContent = live ? w.f.toFixed(1) : (w ? w.f.toFixed(1) : "—");
+  $("cur").className = "temp" + (w && w.f > 55 ? " warm" : "");
+  $("heroLabel").textContent = live ? "Water" : w ? "Water, last reading " + Math.round(w.age_min) + " min ago" : "Water";
+  $("status").textContent = statusSentence();
+  var bad = p.phase === "fault" || (tk && tk.age_min > 3) || /behind/.test($("status").textContent);
+  $("status").style.color = bad ? "var(--red)" : "";
 
-  // the sentence the controller wrote on its last run; fall back to the chiller
-  // Is the chiller actually reachable? The server stamps chiller_age_min when it
-  // last got a live reading. If that's stale (unplugged / offline), say so plainly
-  // rather than showing a dead number as if it were current.
-  var chillerStale = dev.chiller_online === false;
-  var cooling = dev.switch && !chillerStale && cur > dev.temp_set_f;
-  var ctl = dev.ctl, fresh = ctl && ctl.status && ctl.status_ms && (Date.now() - ctl.status_ms) < 10 * 60000;
-  $("status").textContent = chillerStale
-      ? (live ? "Chiller offline (unplugged or no network). Water is " + pr.tub.toFixed(1) + "\u00B0 from the probe."
-              : "Chiller offline and no probe reading. Temperature unknown.")
-    : !dev.switch ? "The chiller is off, pump and filter too."
-    : fresh ? ctl.status
-    : cooling ? "Cooling. The chiller will stop at " + dev.temp_set_f + "\u00B0 on its own sensor."
-    : "Coasting. The chiller restarts itself at " + (dev.temp_set_f + 5) + "\u00B0.";
-  var isOff = fresh && /^Behind schedule|Controller stopped/.test(ctl.status);
-  $("status").style.color = isOff ? "var(--red)" : "";
-  $("skipRow").className = "hide";   // skip now lives per-plunge in the schedule list
   var subs = [];
-  if (live) subs.push("chiller reads " + cur + "\u00B0");
-  if (pr && pr.ambient !== null && pr.ambient !== undefined) subs.push("room " + pr.ambient.toFixed(0) + "\u00B0");
-  if (pr && pr.age_min !== null && pr.age_min >= 10) subs.push("probes last seen " + pr.age_min.toFixed(0) + " min ago");
-  $("sub").textContent = subs.join(", ");
-  $("sub").style.color = "";
-  if (dev.fault) { $("sub").textContent = "Fault code " + dev.fault + " on the chiller"; $("sub").style.color = "var(--red)"; }
+  if (plug) subs.push(plug.on ? (plug.compressor ? "compressor running, " + Math.round(plug.apower_w) + " W" : "plug on, compressor resting") : "plug off");
+  if (ST.ambient) subs.push("room " + ST.ambient.f.toFixed(0) + "°");
+  if (tk) subs.push(tk.age_min > 3 ? "controller silent " + Math.round(tk.age_min) + " min" : "controller ran " + (tk.age_min < 1 ? "just now" : Math.round(tk.age_min) + " min ago"));
+  $("sub").textContent = subs.join(" · ");
+  $("sub").style.color = tk && tk.age_min > 3 ? "var(--red)" : "";
 
-  const rows = (dev.timers || []).map(t => {
-    // Repeating timers carry date "00000000" and put the schedule in loops
-    // (one char per day, Sunday first). Only one-shot timers have a real date.
-    const L = t.loops || "0000000";
-    const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-    let when;
-    if (L === "1111111") when = "Daily";
-    else if (L.indexOf("1") === -1)
-      when = t.date && t.date !== "00000000"
-        ? t.date.slice(4, 6) + "/" + t.date.slice(6, 8)
-        : "Once";
-    else if (L === "0111110") when = "Weekdays";
-    else if (L === "1000001") when = "Weekends";
-    else when = days.filter((_, i) => L[i] === "1").map(d => d.slice(0, 2)).join(" ");
-    return "<tr><td>" + when + " " + t.time + "</td><td>set " + t.value + "\u00B0</td></tr>";
-  }).join("");
-  $("timers").innerHTML = rows || "<tr><td class='muted'>Nothing scheduled</td><td></td></tr>";
-  $("foot").textContent = "Updated " + new Date(dev.at).toLocaleTimeString();
-  if (PLAN) planLoad();
+  // next plunge, and when the cooling for it begins
+  var nx = p.next;
+  if (nx) {
+    var line = "<b>Next plunge</b> " + fmtWhen(nx.at, true) + " · " + nx.label + " · " + nx.target_f + "°";
+    if (p.phase !== "pulldown" && p.phase !== "plunge" && p.pulldown_start_at) {
+      line += '<br><span class="muted">Cooling starts ' + fmtWhen(p.pulldown_start_at, true) +
+        (p.cool_hours_to_target ? " (" + fmtDur(p.cool_hours_to_target * 36e5) + " of cooling from here)" : "") + "</span>";
+    }
+    var nxTxt = new Date(nx.at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    line += ' <button class="ghost tiny" onclick="skipPlunge(' + nx.at + ',\'' + nxTxt + '\')" style="padding:2px 6px;margin-left:4px">skip</button>';
+    $("nextRow").innerHTML = line;
+  } else {
+    $("nextRow").innerHTML = '<span class="muted">No plunge scheduled. Holding ' + c.hold_off_f + "–" + c.hold_on_f + "°.</span>";
+  }
+
+  // power card
+  if (plug) {
+    $("watts").textContent = plug.on ? Math.round(plug.apower_w) : "off";
+    $("watts").style.color = plug.on ? "" : "var(--muted)";
+    $("kwh").innerHTML = (plug.kwh_today !== null && plug.kwh_today !== undefined ? plug.kwh_today.toFixed(2) + " kWh today" : "") +
+      (plug.aenergy_wh ? "<br>" + (plug.aenergy_wh / 1000).toFixed(1) + " kWh on the meter" : "");
+    $("pwrMeta").textContent = plug.seen_ms ? "plug seen " + fmtDur(Date.now() - plug.seen_ms) + " ago" : "";
+    if (plug.error && !/dry_run/.test(plug.error)) { $("pwrMeta").textContent = plug.error; $("pwrMeta").style.color = "var(--red)"; }
+    else $("pwrMeta").style.color = "";
+  }
+  var ov = c.override;
+  $("ovOn").className = "pill" + (ov && ov.on ? " on" : "");
+  $("ovOff").className = "pill" + (ov && !ov.on ? " on" : "");
+  $("ovClear").className = ov ? "ghost tiny" : "ghost tiny hide";
+  if (!OVBUSY) $("ovMsg").textContent = ov
+    ? "Manual " + (ov.on ? "on" : "off") + " until " + fmtWhen(ov.until, true) + ". The 5-minute compressor rest still applies."
+    : "Manual buttons override the controller for two hours, then it takes back over.";
+
+  $("autoBtn").textContent = c.enabled ? (c.dry_run ? "Dry run" : "On") : "Off";
+  $("autoBtn").className = "pill" + (c.enabled && !c.dry_run ? " on" : "");
+  $("autoSub").textContent = c.enabled
+    ? (c.dry_run ? "deciding every minute but not switching — tap to go live" : "switching the plug for plunges and the hold band")
+    : "the plug is left alone — tap to enable";
+  if (document.activeElement !== $("holdOn")) $("holdOn").value = c.hold_on_f;
+  if (document.activeElement !== $("holdOff")) $("holdOff").value = c.hold_off_f;
+  if (document.activeElement !== $("panelF")) $("panelF").value = c.panel_f;
+  $("holdNote").textContent = "Between plunges the plug turns on at " + c.hold_on_f + "° and off at " + c.hold_off_f +
+    "° to keep the water sanitary. The chiller’s own panel stays at " + c.panel_f + "° by hand — the app never changes it; " +
+    "with power it just cools toward that. Never on again within " + c.min_off_min + " min of turning off.";
+
+  $("foot").textContent = "Updated " + new Date(ST.at).toLocaleTimeString();
 }
 
 async function refresh() {
-  try { dev = await api("state"); if (pending === null) pending = dev.temp_set_f; paint(); }
+  try { ST = await api("state"); paint(); }
   catch (e) { $("foot").textContent = "Offline — " + e; }
 }
 
-/* one command per intent: collect taps, send once you stop */
-function nudge(d) {
-  pending = Math.max(36, Math.min(122, (pending ?? dev.temp_set_f) + d));
-  paint();
-  $("writeMsg").textContent = "\u2026";
-  clearTimeout(timer);
-  timer = setTimeout(async () => {
-    busy = true; $("writeMsg").textContent = "Sending " + pending + "\u00B0\u2026";
-    try {
-      dev = await api("set", { f: pending });
-      $("writeMsg").textContent = dev.temp_set_f === pending
-        ? "Chiller confirmed " + pending + "\u00B0"
-        : "Chiller reports " + dev.temp_set_f + "\u00B0";
-      pending = dev.temp_set_f; paint();
-    } catch (e) { $("writeMsg").textContent = "Failed: " + e; }
-    busy = false;
-    setTimeout(() => { if (!busy) $("writeMsg").textContent = ""; }, 4000);
-  }, 800);
+/* ---- controls ---- */
+var OVBUSY = false;
+async function setOverride(mode) {
+  if (mode === "off" && !confirm("Cut power to the chiller for two hours? The pump and filter stop too.")) return;
+  OVBUSY = true; $("ovMsg").textContent = "sending…";
+  try {
+    var r = await api("override", { mode: mode, hours: "2" });
+    var t = r.tick || {};
+    $("ovMsg").textContent = t.error && /dry_run/.test(t.error) ? "Set, but the controller is in dry run — it won’t switch anything."
+      : t.applied ? "Plug switched " + t.want + "." : t.want === "keep" && /rest|min on/.test(t.why || "") ? t.why : (t.why || "ok");
+  } catch (e) { $("ovMsg").textContent = "Failed: " + e; }
+  OVBUSY = false;
+  setTimeout(function () { OVBUSY = false; refresh(); }, 2500);
+  refresh();
 }
-$("minus").onclick = () => nudge(-1);
-$("plus").onclick = () => nudge(1);
+$("ovOn").onclick = function () { setOverride("on"); };
+$("ovOff").onclick = function () { setOverride("off"); };
+$("ovClear").onclick = function () { setOverride("clear"); };
 
-$("power").onclick = async () => {
-  if (dev.switch && !confirm("Turn the chiller off? Filtration stops too.")) return;
-  $("writeMsg").textContent = "Sending\u2026";
-  dev = await api("power", { on: dev.switch ? "0" : "1" });
-  pending = dev.temp_set_f; paint();
-  $("writeMsg").textContent = "Chiller is " + (dev.switch ? "on" : "off");
+$("autoBtn").onclick = async function () {
+  var c = ST.ctl, q;
+  if (!c.enabled) q = { enabled: "1", dry_run: "1" };            // off -> dry run first
+  else if (c.dry_run) { if (!confirm("Go live? The controller will start switching the plug.")) return; q = { dry_run: "0" }; }
+  else { if (!confirm("Turn automatic control off? The plug stays as it is now.")) return; q = { enabled: "0" }; }
+  await api("setControl", q); refresh();
 };
+["holdOn", "holdOff", "panelF"].forEach(function (id) {
+  $(id).addEventListener("change", async function () {
+    var q = {}; q[{ holdOn: "hold_on_f", holdOff: "hold_off_f", panelF: "panel_f" }[id]] = $(id).value;
+    var r = await api("setControl", q);
+    if (r && r.error) { alert(r.error); }
+    refresh();
+  });
+});
 
+/* ---------------- chart ----------------
+   Tub and room from the probes, compressor bands from the plug's meter, and a
+   dashed forecast that follows the controller's own rules forward from the
+   last reading: pulldown from its start time, otherwise the hold band. */
+var HIST = null, VIEW = null, SPAN = null, CUR = null, SHOW_ROOM = false;
+function toggleRoom() { SHOW_ROOM = !SHOW_ROOM; draw(); }
 
-/* The probe sits in the chiller loop and reports whole degrees, so the raw
-   trace is a staircase with bursts of flicker where the water sits on a
-   rounding boundary. Each burst marks a half-degree crossing, timed to about
-   a second - collapse it to its midpoint and the line through them is real.
-   The dashed line is the model projected forward from the first crossing in
-   view and never corrected, so the gap is the honest error. */
-var HIST = null, PAR = null, VIEW = null, SPAN = null, CUR = null;
-
-function crossings(ev) {
-  var STABLE = 120000, idx = [], out = [], i, n, a, b;
-  for (i = 0; i < ev.length; i++)
-    if (i === ev.length - 1 || ev[i + 1].t - ev[i].t >= STABLE) idx.push(i);
-  for (n = 1; n < idx.length; n++) {
-    a = idx[n - 1]; b = idx[n];
-    if (ev[a].v === ev[b].v) continue;
-    out.push({ t: (ev[a + 1].t + ev[b].t) / 2, v: (ev[a].v + ev[b].v) / 2 });
+function forecast(tEnd) {
+  if (!HIST || !HIST.tub.length || !ST) return [];
+  var m = ST.model, c = ST.ctl, p = ST.plan, S = ST.settings;
+  var last = HIST.tub[HIST.tub.length - 1];
+  var T = last.v, t = last.t, step = 5 * 60000, pts = [{ t: t, v: T }];
+  var plug = ST.plug ? !!ST.plug.on : false;
+  var nx = p.next, pdStart = p.pulldown_start_at, pdEnd = nx ? nx.at + S.plunge_window_min * 60000 : 0;
+  var latched = p.phase === "pulldown" || p.phase === "plunge";
+  var end = Math.max(tEnd, nx ? pdEnd + 36e5 : 0, t + 36e5);
+  for (t += step; t <= end && pts.length < 3000; t += step) {
+    var want;
+    if (c.override && t < c.override.until) want = c.override.on;
+    else if (!c.enabled) want = plug;
+    else if (nx && t < pdEnd && (latched || (pdStart && t >= pdStart))) { want = true; latched = true; }
+    else if (T >= c.hold_on_f) want = true;
+    else if (T <= c.hold_off_f) want = false;
+    else want = plug;
+    if (nx && t >= pdEnd) { latched = false; }
+    plug = want;
+    var cooling = plug && T > m.floor_f;
+    var rate = cooling ? (m.cool_a - m.cool_b * T) : m.k * (m.ambient_f - T);
+    T += rate * (step / 3600000);
+    if (cooling && T < m.floor_f) T = m.floor_f;
+    pts.push({ t: t, v: T, on: plug });
   }
+  return pts;
+}
+
+function crosshair(tub, amb, pred, X, Y, a, b, span, W, H, T, B) {
+  if (CUR === null) return "";
+  var t = a + span * CUR;
+  if (t < a || t > b) return "";
+  var x = X(t), tv = at(tub, t), mv = SHOW_ROOM ? at(amb, t) : null, pv = t > Date.now() - 5 * 60000 ? at(pred, t) : null;
+  if (!tv && !mv && !pv) return "";
+  var lines = '<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + T + '" y2="' + (H - B) + '" style="stroke:var(--muted)" stroke-width=".8" stroke-dasharray="2 3"/>';
+  var dot = function (v, fill, stroke) {
+    return '<circle cx="' + x.toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="3.2" style="fill:' + fill + (stroke ? ';stroke:' + stroke + ';stroke-width:1.5' : '') + '"/>';
+  };
+  var rows = [];
+  if (tv) { lines += dot(tv.v, "var(--tub)"); rows.push(["var(--tub)", "tub  " + tv.v.toFixed(1) + "°"]); }
+  if (mv) { lines += dot(mv.v, "var(--room)"); rows.push(["var(--room)", "room " + mv.v.toFixed(1) + "°"]); }
+  if (pv) { lines += dot(pv.v, "none", "var(--model)"); rows.push(["var(--model)", "forecast " + pv.v.toFixed(1) + "°" + (pv.on ? " on" : " off")]); }
+  // compressor state at that instant, from the plug log
+  var pl = HIST.plug, comp = null, i;
+  for (i = 0; i < pl.length; i++) { if (pl[i].t > t) break; comp = pl[i]; }
+  if (comp && t - comp.t < 10 * 60000) rows.push(["var(--muted)", comp.comp ? "compressor " + Math.round(comp.w) + " W" : comp.on ? "plug on, idle" : "plug off"]);
+  var nx = ST && ST.plan && ST.plan.next;
+  if (nx && t > Date.now()) {
+    var dh = (nx.at - t) / 36e5;
+    rows.push(["var(--muted)", Math.abs(dh) < 1 / 60 ? "at plunge time" : dh > 0 ? fmtDur(dh * 36e5) + " before plunge" : fmtDur(-dh * 36e5) + " after"]);
+  }
+  var d = new Date(t);
+  var l1 = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "  " + d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  var bw = 104, bh = 19 + rows.length * 12 + 4;
+  var bx = x + 8 + bw > W ? x - bw - 8 : x + 8, by = T + 2;
+  var out = lines + '<rect x="' + bx + '" y="' + by + '" width="' + bw + '" height="' + bh + '" style="fill:var(--tip);stroke:var(--rule)" rx="2" opacity=".95"/>' +
+    '<text x="' + (bx + 6) + '" y="' + (by + 12) + '" style="fill:var(--muted)" font-size="8.5">' + l1 + '</text>';
+  rows.forEach(function (r, i) {
+    out += '<text x="' + (bx + 6) + '" y="' + (by + 25 + i * 12) + '" style="fill:' + r[0] + '" font-size="10" xml:space="preserve">' + r[1] + '</text>';
+  });
   return out;
 }
 
-function setpointAt(sps, t) {
-  var v = sps.length ? sps[0].v : 65, i;
-  for (i = 0; i < sps.length; i++) if (sps[i].t <= t) v = sps[i].v;
-  return v;
-}
+function draw() {
+  if (!HIST || !ST || !VIEW) return;
+  if ($("roomBtn")) $("roomBtn").style.opacity = SHOW_ROOM ? "1" : ".4";
+  var W = 340, H = 176, L = 28, R = 8, T = 12, B = 26;
+  var a = VIEW[0], b = VIEW[1], span = b - a;
+  var inWin = function (arr) { return arr.filter(function (p) { return p.t >= a && p.t <= b; }); };
+  var tubV = inWin(HIST.tub), ambV = inWin(HIST.amb);
+  var pred = forecast(b), predV = inWin(pred);
+  if (!tubV.length && !predV.length) { $("spark").innerHTML = ""; return; }
 
-/* integrate the model forward: dT/dt = -k(T-Ta) - C while the compressor
-   runs, and the compressor follows the chiller's own 5F deadband */
-function project(t0, v0, t1, sps, P) {
-  var pts = [], T = v0, step = 60000, on = false, t, set;
-  for (t = t0; t <= t1; t += step) {
-    set = setpointAt(sps, t);
-    if (T >= set + P.hysteresis_f) on = true; else if (T <= set) on = false;
-    pts.push({ t: t, v: T });
-    T += (-P.k * (T - P.ambient_f) - (on ? P.c : 0)) * (step / 3600000);
+  var c = ST.ctl, nx = ST.plan.next;
+  var vals = tubV.map(function (p) { return p.v; }).concat(predV.map(function (p) { return p.v; }))
+    .concat(SHOW_ROOM ? ambV.map(function (p) { return p.v; }) : [])
+    .concat(nx && nx.at >= a && nx.at <= b ? [nx.target_f] : []);
+  var lo = Math.min.apply(null, vals) - .6, hi = Math.max.apply(null, vals) + .6;
+  if (hi - lo < 2.5) { var mid = (hi + lo) / 2; lo = mid - 1.25; hi = mid + 1.25; }
+  var X = function (t) { return L + (W - L - R) * (t - a) / span; };
+  var Y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
+  var g = "", v, d, x;
+
+  var rng = hi - lo, stepV = rng <= 3 ? .5 : rng <= 7 ? 1 : rng <= 16 ? 2 : rng <= 35 ? 5 : 10;
+  var lab = function (n) { return stepV < 1 ? n.toFixed(1) : String(Math.round(n)); };
+  for (v = Math.ceil(lo / stepV) * stepV; v <= hi; v += stepV)
+    g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" style="stroke:var(--rule)" stroke-width=".5"/>' +
+         '<text x="' + (L - 5) + '" y="' + (Y(v) + 3.5) + '" style="fill:var(--muted)" font-size="9" text-anchor="end">' + lab(v) + '</text>';
+  var stepT = span > 36e5 * 96 ? 2 * 864e5 : span > 36e5 * 36 ? 864e5 : span > 36e5 * 12 ? 216e5 : span > 36e5 * 4 ? 72e5 : 36e5;
+  for (var t = Math.ceil(a / stepT) * stepT; t <= b; t += stepT) {
+    x = X(t); d = new Date(t);
+    g += '<line x1="' + x + '" x2="' + x + '" y1="' + T + '" y2="' + (H - B) + '" style="stroke:var(--rule)" stroke-width=".5" stroke-dasharray="1 4"/>' +
+         '<text x="' + x + '" y="' + (H - 12) + '" style="fill:var(--muted)" font-size="9" text-anchor="middle">' + fmtTick(d, span) + '</text>';
   }
-  return pts;
-}
+  g += '<text x="' + L + '" y="' + (H - 2) + '" style="fill:var(--muted)" font-size="8.5">' +
+       new Date(a).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + '</text>';
 
-/* Where the water is going, from the last real reading, following the
-   controller's own plan: coast, then cool from coolAt, hold at target until
-   holdUntil, then coast again. Water space throughout - no panel offset. */
-function forecast(tEnd) {
-  var tub = HIST && HIST.tub;
-  if (!tub || !tub.length || !PAR) return [];
-  var last = tub[tub.length - 1], plan = (dev && dev.ctl && dev.ctl.plan) || {};
-  var T = last.v, t = last.t, step = 5 * 60000, pts = [{ t: t, v: T }];
-  var coolAt = plan.coolAt || null, target = plan.target || null, holdUntil = plan.holdUntil || null;
-  var end = Math.max(tEnd, holdUntil ? holdUntil + 36e5 : 0, t + 36e5);
-  for (t += step; t <= end && pts.length < 2000; t += step) {
-    var on = false;
-    if (target !== null) {
-      var inRun = (plan.phase === "cool" || (coolAt && t >= coolAt)) &&
-                  (!holdUntil || t <= holdUntil);
-      if (inRun) on = T > target;
-      if (inRun && !on) { T = target; pts.push({ t: t, v: T }); continue; }
+  // hold band, faint
+  var band = "";
+  if (c.enabled) {
+    var y1 = Y(Math.min(hi, c.hold_on_f)), y2 = Y(Math.max(lo, c.hold_off_f));
+    if (c.hold_off_f < hi && c.hold_on_f > lo) band = '<rect x="' + L + '" y="' + y1.toFixed(1) + '" width="' + (W - L - R) + '" height="' + Math.max(0, y2 - y1).toFixed(1) + '" style="fill:var(--tub)" opacity=".06"/>';
+  }
+  // compressor bands from the plug log (measured), then forecast bands (predicted)
+  var bands = "", pl = HIST.plug, i, s0 = null;
+  var flush = function (t0, t1, pred) {
+    if (t1 <= a || t0 >= b) return;
+    bands += '<rect x="' + X(Math.max(t0, a)).toFixed(1) + '" y="' + T + '" width="' + Math.max(.5, X(Math.min(t1, b)) - X(Math.max(t0, a))).toFixed(1) +
+      '" height="' + (H - T - B) + '" style="fill:var(--chiller)" opacity="' + (pred ? ".07" : ".16") + '"/>';
+  };
+  for (i = 0; i < pl.length; i++) {
+    var on = pl[i].comp;
+    if (s0 !== null && i > 0 && pl[i].t - pl[i - 1].t > 10 * 60000) { flush(s0, pl[i - 1].t + 60000, false); s0 = null; }   // a gap in the log ends a band
+    if (on && s0 === null) s0 = pl[i].t;
+    if (!on && s0 !== null) { flush(s0, pl[i].t, false); s0 = null; }
+    if (on && i === pl.length - 1) flush(s0, Math.min(pl[i].t + 60000, Date.now()), false);
+  }
+  s0 = null;
+  for (i = 1; i < pred.length; i++) {
+    var pon = pred[i].on && pred[i].v > ST.model.floor_f + .05;
+    if (pon && s0 === null) s0 = pred[i - 1].t;
+    if (!pon && s0 !== null) { flush(s0, pred[i].t, true); s0 = null; }
+  }
+  if (s0 !== null) flush(s0, pred[pred.length - 1].t, true);
+
+  var path = function (arr, key) {
+    var s = "", p;
+    for (var j = 0; j < arr.length; j++) {
+      p = arr[j];
+      if (p.t < a - span || p.t > b + span) continue;
+      s += (s ? " L" : "M") + X(p.t).toFixed(1) + " " + Y(p.v).toFixed(1);
     }
-    T += (-PAR.k * (T - PAR.ambient_f) - (on ? PAR.c : 0)) * (step / 3600000);
-    if (on && T < target) T = target;
-    pts.push({ t: t, v: T });
+    return s;
+  };
+  var marker = "";
+  if (nx && nx.at >= a && nx.at <= b) {
+    var px = X(nx.at).toFixed(1), py = Y(nx.target_f).toFixed(1);
+    marker = '<line x1="' + px + '" x2="' + px + '" y1="' + T + '" y2="' + (H - B) + '" style="stroke:var(--tub)" stroke-width=".8" opacity=".45"/>' +
+      '<circle cx="' + px + '" cy="' + py + '" r="5" fill="none" style="stroke:var(--tub)" stroke-width="1.5"/>' +
+      (Number(px) > W - 70
+        ? '<text x="' + (Number(px) - 8) + '" y="' + (T + 10) + '" text-anchor="end" style="fill:var(--tub)" font-size="9">plunge ' + nx.target_f + '°</text>'
+        : '<text x="' + (Number(px) + 8) + '" y="' + (T + 10) + '" style="fill:var(--tub)" font-size="9">plunge ' + nx.target_f + '°</text>');
   }
-  return pts;
+  var nowLine = Date.now() >= a && Date.now() <= b
+    ? '<line x1="' + X(Date.now()).toFixed(1) + '" x2="' + X(Date.now()).toFixed(1) + '" y1="' + T + '" y2="' + (H - B) + '" style="stroke:var(--muted)" stroke-width=".8" stroke-dasharray="2 5" opacity=".7"/>' : "";
+  var tip = HIST.tub.length ? HIST.tub[HIST.tub.length - 1] : null;
+
+  $("spark").setAttribute("viewBox", "0 0 " + W + " " + H);
+  $("spark").innerHTML =
+    '<defs><clipPath id="plotclip"><rect x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '"/></clipPath></defs>' + g +
+    '<g clip-path="url(#plotclip)">' + band + bands + marker + nowLine +
+    (SHOW_ROOM ? '<path d="' + path(HIST.amb) + '" fill="none" style="stroke:var(--room)" stroke-width="1" stroke-dasharray="4 4" opacity=".85"/>' : "") +
+    '<path d="' + path(pred) + '" fill="none" style="stroke:var(--model)" stroke-width="1.3" stroke-dasharray="4 3" opacity=".9"/>' +
+    '<path d="' + path(HIST.tub) + '" fill="none" style="stroke:var(--tub)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>' +
+    (tip && tip.t >= a && tip.t <= b ? '<circle cx="' + X(tip.t).toFixed(1) + '" cy="' + Y(tip.v).toFixed(1) + '" r="3.5" style="fill:var(--tub)"/>' : "") +
+    '</g>' + crosshair(tubV, ambV, pred, X, Y, a, b, span, W, H, T, B);
+
+  var pv = pred.length ? pred[pred.length - 1].v : null;
+  var kwh = 0, cnt = 0;
+  for (i = 1; i < HIST.plug.length; i++) if (HIST.plug[i].t >= a && HIST.plug[i].t <= b && HIST.plug[i].comp) { kwh += HIST.plug[i].w * (HIST.plug[i].t - HIST.plug[i - 1].t) / 36e5 / 1000; cnt++; }
+  $("range").innerHTML = (tip ? '<span style="color:var(--tub)">tub</span> ' + tip.v.toFixed(1) + '°' : "") +
+    (pv !== null ? ' · <span style="color:var(--model)">forecast</span> ' + pv.toFixed(1) + '°' : "") +
+    (cnt ? ' · <span style="color:var(--chiller)">compressor</span> ' + fmtDur(cnt * 60000) + ", " + kwh.toFixed(2) + " kWh in view" : "");
 }
+
+var CHART_H = 72;
+async function chart() {
+  var h;
+  try { h = await api("history", { h: CHART_H }); } catch (e) { return; }
+  var mk = function (rows) { return rows.map(function (r) { return { t: r[0], v: r[1] }; }); };
+  HIST = { tub: mk(h.tub), amb: mk(h.amb), plug: h.plug.map(function (r) { return { t: r[0], on: !!r[1], comp: !!r[2], w: r[3] }; }) };
+  var t0 = HIST.tub.length ? HIST.tub[0].t : Date.now() - 36e5;
+  var nx = ST && ST.plan && ST.plan.next;
+  SPAN = [t0, Math.max(Date.now() + 3 * 36e5, nx ? nx.at + 3 * 36e5 : 0)];
+  if (!VIEW) VIEW = [Math.max(t0, Date.now() - 9 * 36e5), Date.now() + 3 * 36e5];
+  draw();
+}
+document.addEventListener("click", function (e) {
+  var h = e.target.getAttribute && e.target.getAttribute("data-h");
+  if (h === "168" && CHART_H < 168) { CHART_H = 168; chart(); }
+});
 
 function fmtTick(d, span) {
   if (span > 36 * 3600000)
@@ -584,221 +772,6 @@ function at(arr, t) {
   }
   return bd < 45 * 60000 ? best : null;
 }
-
-function crosshair(act, pred, tub, amb, X, Y, a, b, span, W, H, T, B) {
-  if (CUR === null) return "";
-  var t = a + span * CUR;
-  if (t < a || t > b) return "";
-  var x = X(t), av = at(act, t), pv = at(pred, t);
-  var tv = at(tub, t), mv = SHOW_ROOM ? at(amb, t) : null;
-  if (!av && !tv && !pv) return "";
-
-  var lines = '<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + T +
-              '" y2="' + (H - B) + '" style="stroke:var(--muted)" stroke-width=".8" stroke-dasharray="2 3"/>';
-  var dot = function (v, fill, stroke) {
-    return '<circle cx="' + x.toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="3.2" style="fill:' +
-           fill + (stroke ? ';stroke:' + stroke + ';stroke-width:1.5' : '') + '"/>';
-  };
-  if (av) lines += dot(av.v, "var(--chiller)");
-  if (tv) lines += dot(tv.v, "var(--tub)");
-  if (mv) lines += dot(mv.v, "var(--room)");
-  if (pv) lines += dot(pv.v, "none", "var(--model)");
-
-  // rows are built from whatever series actually have a sample here, so the
-  // box shrinks before the probes exist and grows once they do
-  var rows = [];
-  if (av) rows.push(["var(--chiller)", "chiller " + av.v.toFixed(1) + "\u00B0"]);
-  if (tv) rows.push(["var(--tub)", "tub     " + tv.v.toFixed(1) + "\u00B0"]);
-  if (mv) rows.push(["var(--room)", "room    " + mv.v.toFixed(1) + "\u00B0"]);
-  if (pv) rows.push(["var(--model)", (t > Date.now() ? "forecast " : "model    ") + pv.v.toFixed(1) + "\u00B0"]);
-  var plF = dev && dev.ctl && dev.ctl.plan;
-  if (pv && t > Date.now() && plF && plF.plungeAt) {
-    var dh = (plF.plungeAt - t) / 36e5;
-    rows.push(["var(--muted)", Math.abs(dh) < 1/60 ? "at plunge time"
-      : dh > 0 ? Math.floor(dh) + "h" + String(Math.round((dh % 1) * 60)).padStart(2, "0") + " before plunge"
-      : Math.floor(-dh) + "h" + String(Math.round((-dh % 1) * 60)).padStart(2, "0") + " after"]);
-  }
-  if (av && tv) rows.push(["var(--muted)",
-    (av.v - tv.v >= 0 ? "+" : "") + (av.v - tv.v).toFixed(1) + "\u00B0 gap"]);
-  else if (av && pv) rows.push(["var(--muted)",
-    (pv.v - av.v >= 0 ? "+" : "") + (pv.v - av.v).toFixed(1) + "\u00B0 off"]);
-
-  var d = new Date(t);
-  var l1 = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "  " +
-           d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  var bw = 96, bh = 19 + rows.length * 12 + 4;
-  var bx = x + 8 + bw > W ? x - bw - 8 : x + 8;
-  var by = T + 2;
-  var out = lines +
-    '<rect x="' + bx + '" y="' + by + '" width="' + bw + '" height="' + bh +
-    '" style="fill:var(--tip);stroke:var(--rule)" rx="2" opacity=".95"/>' +
-    '<text x="' + (bx + 6) + '" y="' + (by + 12) + '" style="fill:var(--muted)" font-size="8.5">' + l1 + '</text>';
-  rows.forEach(function (r, i) {
-    out += '<text x="' + (bx + 6) + '" y="' + (by + 25 + i * 12) + '" style="fill:' + r[0] +
-           '" font-size="10" xml:space="preserve">' + r[1] + '</text>';
-  });
-  return out;
-}
-
-var SHOW_ROOM = false;
-function toggleRoom() {
-  SHOW_ROOM = !SHOW_ROOM;
-  draw();
-}
-function draw() {
-  if (!HIST || !PAR) return;
-  if ($("roomBtn")) $("roomBtn").style.opacity = SHOW_ROOM ? "1" : ".4";
-  var W = 340, H = 176, L = 28, R = 8, T = 12, B = 26;
-  var a = VIEW[0], b = VIEW[1], span = b - a;
-  var act = HIST.cross.filter(function (p) { return p.t >= a - span && p.t <= b + span; });
-  if (act.length < 2) { $("spark").innerHTML = ""; return; }
-
-  var pred = forecast(b);
-  var vis = act.concat(pred).filter(function (p) { return p.t >= a && p.t <= b; });
-  if (!vis.length) return;
-  var inWin = function (arr) {
-    return (arr || []).filter(function (p) { return p.t >= a && p.t <= b; });
-  };
-  var tubV = inWin(HIST.tub), ambV = inWin(HIST.amb);
-  // Scale to what was actually measured. Over a multi-day window the model
-  // projection runs away toward ambient, and letting it set the axis squashes
-  // every real reading into a stripe. It gets clipped instead.
-  var actVis = act.filter(function (p) { return p.t >= a && p.t <= b; });
-  var predVis = pred.filter(function (p) { return p.t >= a && p.t <= b; }).map(function (p) { return p.v; });
-  var plY = dev && dev.ctl && dev.ctl.plan;
-  var vals = (actVis.length ? actVis : vis).map(function (p) { return p.v; })
-                .concat(tubV.map(function (p) { return p.v; }))
-                .concat(predVis)
-                .concat(plY && plY.target && plY.plungeAt >= a && plY.plungeAt <= b ? [plY.target] : [])
-                .concat(SHOW_ROOM ? ambV.map(function (p) { return p.v; }) : []);
-  var lo = Math.min.apply(null, vals) - .6, hi = Math.max.apply(null, vals) + .6;
-  if (hi - lo < 2.5) { var m = (hi + lo) / 2; lo = m - 1.25; hi = m + 1.25; }
-
-  var X = function (t) { return L + (W - L - R) * (t - a) / span; };
-  var Y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
-  var g = "", v, d, x;
-
-  var rng = hi - lo;
-  var stepV = rng <= 3 ? .5 : rng <= 7 ? 1 : rng <= 16 ? 2 : rng <= 35 ? 5 : 10;
-  var lab = function (n) { return stepV < 1 ? n.toFixed(1) : String(Math.round(n)); };
-  for (v = Math.ceil(lo / stepV) * stepV; v <= hi; v += stepV)
-    g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) +
-         '" style="stroke:var(--rule)" stroke-width=".5"/><text x="' + (L - 5) + '" y="' + (Y(v) + 3.5) +
-         '" style="fill:var(--muted)" font-size="9" text-anchor="end">' + lab(v) + '</text>';
-
-  var stepT = span > 36e5 * 36 ? 864e5 : span > 36e5 * 12 ? 216e5 : span > 36e5 * 4 ? 72e5 : 36e5;
-  var t = Math.ceil(a / stepT) * stepT;
-  for (; t <= b; t += stepT) {
-    x = X(t); d = new Date(t);
-    g += '<line x1="' + x + '" x2="' + x + '" y1="' + T + '" y2="' + (H - B) +
-         '" style="stroke:var(--rule)" stroke-width=".5" stroke-dasharray="1 4"/><text x="' + x +
-         '" y="' + (H - 12) + '" style="fill:var(--muted)" font-size="9" text-anchor="middle">' +
-         fmtTick(d, span) + '</text>';
-  }
-  var dl = new Date(a);
-  g += '<text x="' + L + '" y="' + (H - 2) + '" fill="#4e6f7e" font-size="8.5">' +
-       dl.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) +
-       '</text>';
-
-  var path = function (arr) {
-    var s = "", i = 0, p;
-    for (; i < arr.length; i++) {
-      p = arr[i];
-      if (p.t < a - span || p.t > b + span) continue;
-      s += (s ? " L" : "M") + X(p.t).toFixed(1) + " " + Y(p.v).toFixed(1);
-    }
-    return s;
-  };
-
-  var tip = act[act.length - 1];
-  // faint raw staircase behind, so a flat stretch still shows something
-  var raw = "", rr = HIST.raw, i2, xe;
-  for (i2 = 0; i2 < rr.length; i2++) {
-    if (rr[i2].t > b || (i2 + 1 < rr.length && rr[i2 + 1].t < a)) continue;
-    xe = i2 + 1 < rr.length ? Math.min(rr[i2 + 1].t, b) : Math.min(Date.now(), b);
-    raw += "M" + X(Math.max(rr[i2].t, a)).toFixed(1) + " " + Y(rr[i2].v).toFixed(1) +
-           " L" + X(xe).toFixed(1) + " " + Y(rr[i2].v).toFixed(1);
-  }
-  $("spark").setAttribute("viewBox", "0 0 " + W + " " + H);
-  $("spark").innerHTML =
-    '<defs><clipPath id="plotclip"><rect x="' + L + '" y="' + T + '" width="' +
-    (W - L - R) + '" height="' + (H - T - B) + '"/></clipPath></defs>' + g +
-    '<g clip-path="url(#plotclip)">' +
-    (function () {
-      var pl = dev && dev.ctl && dev.ctl.plan;
-      if (!pl || !pl.plungeAt || !pl.target || pl.plungeAt < a || pl.plungeAt > b) return "";
-      var px = X(pl.plungeAt).toFixed(1), py = Y(pl.target).toFixed(1);
-      return '<line x1="' + px + '" x2="' + px + '" y1="' + T + '" y2="' + (H - B) +
-             '" style="stroke:var(--tub)" stroke-width=".8" opacity=".45"/>' +
-             '<circle cx="' + px + '" cy="' + py + '" r="5" fill="none" style="stroke:var(--tub)" stroke-width="1.5"/>' +
-             (Number(px) > W - 70
-               ? '<text x="' + (Number(px) - 8) + '" y="' + (T + 10) + '" text-anchor="end" style="fill:var(--tub)" font-size="9">plunge ' + pl.target + '\u00B0</text>'
-               : '<text x="' + (Number(px) + 8) + '" y="' + (T + 10) + '" style="fill:var(--tub)" font-size="9">plunge ' + pl.target + '\u00B0</text>');
-    })() +
-    (Date.now() >= a && Date.now() <= b
-      ? '<line x1="' + X(Date.now()).toFixed(1) + '" x2="' + X(Date.now()).toFixed(1) + '" y1="' + T +
-        '" y2="' + (H - B) + '" style="stroke:var(--muted)" stroke-width=".8" stroke-dasharray="2 5" opacity=".7"/>'
-      : "") +
-    '<path d="' + raw + '" fill="none" stroke="#3d6b7d" stroke-width="1" opacity=".5"/>' +
-    (SHOW_ROOM
-      ? '<path d="' + path(HIST.amb) + '" fill="none" style="stroke:var(--room)" stroke-width="1" ' +
-        'stroke-dasharray="4 4" opacity=".85"/>'
-      : "") +
-    '<path d="' + path(HIST.tub) + '" fill="none" style="stroke:var(--tub)" stroke-width="1.6" ' +
-    'stroke-linejoin="round" stroke-linecap="round"/>' +
-    '<path d="' + path(pred) + '" fill="none" style="stroke:var(--model)" stroke-width="1.3" ' +
-    'stroke-dasharray="4 3" opacity=".9" clip-path="url(#plotclip)"/>' +
-    '<path d="' + path(act) + '" fill="none" style="stroke:var(--chiller)" stroke-width="2" ' +
-    'stroke-linejoin="round" stroke-linecap="round"/>' +
-    (tip.t >= a && tip.t <= b
-      ? '<circle cx="' + X(tip.t).toFixed(1) + '" cy="' + Y(tip.v).toFixed(1) + '" r="3.5" style="fill:var(--chiller)"/>'
-      : "") + '</g>' +
-    crosshair(act, pred, tubV, ambV, X, Y, a, b, span, W, H, T, B);
-
-  var pv = pred.length ? pred[pred.length - 1].v : null;
-  var tubTip = tubV.length ? tubV[tubV.length - 1] : null;
-  $("range").innerHTML = '<span style="color:var(--chiller)">chiller</span> ' + tip.v.toFixed(1) +
-    '\u00B0, <span style="color:var(--model)">forecast</span> ' +
-    (pv === null ? "-" : pv.toFixed(1)) + '\u00B0' +
-    (tubTip ? ' \u00b7 <span style="color:var(--tub)">tub</span> ' + tubTip.v.toFixed(1) + '\u00B0' : "");
-}
-
-async function chart() {
-  try {
-    if (!PAR) PAR = await api("params");
-    var ev = await api("history", { h: 72 });
-  } catch (e) { return; }
-  var temps = ev.filter(function (e) { return e.c === "temp_current_f"; })
-                .sort(function (x, y) { return x.t - y.t; });
-  var sps = ev.filter(function (e) { return e.c === "temp_set_f"; })
-              .sort(function (x, y) { return x.t - y.t; });
-  if (temps.length < 3) return;
-  HIST = { cross: crossings(temps), sps: sps, t0: temps[0].t, raw: temps,
-           tub: ev.filter(function (e) { return e.c === "probe_b"; })
-                  .sort(function (x, y) { return x.t - y.t; }),
-           amb: ev.filter(function (e) { return e.c === "probe_a"; })
-                  .sort(function (x, y) { return x.t - y.t; }) };
-  if (!HIST.cross.length) return;
-  // The crossing line ends at the last crossing, which can be hours ago when
-  // the water is being held: the tub sat at 40F from 04:58 to 08:00 and the
-  // chart looked dead. Carry it to now, clamped to the band the sensor is
-  // still reporting, so it never drifts further than the reading allows.
-  var lastRaw = temps[temps.length - 1], c = HIST.cross;
-  var tipV = c[c.length - 1].v;
-  if (c.length >= 2) {
-    var p = c[c.length - 1], q = c[c.length - 2];
-    tipV = p.v + (p.v - q.v) / (p.t - q.t) * (Date.now() - p.t);
-  }
-  HIST.cross = c.concat([{
-    t: Date.now(),
-    v: Math.max(lastRaw.v - 0.5, Math.min(lastRaw.v + 0.5, tipV)),
-  }]);
-  var planEnd = dev && dev.ctl && dev.ctl.plan && dev.ctl.plan.holdUntil ? dev.ctl.plan.holdUntil + 36e5 : 0;
-  SPAN = [HIST.t0, Math.max(Date.now() + 3 * 36e5, planEnd)];
-  if (!VIEW) VIEW = [Math.max(HIST.t0, Date.now() - 9 * 36e5), Date.now() + 3 * 36e5];
-  draw();
-}
-
 /* One finger scrubs the crosshair, two fingers pan and zoom. Keeping those
    on separate gestures stops the readout fighting the pan - dragging the
    chart under your own finger makes the numbers useless. */
@@ -900,10 +873,10 @@ async function chart() {
   document.addEventListener("click", function (e) {
     var h = e.target.getAttribute && e.target.getAttribute("data-h");
     if (!h || !SPAN) return;
-    var plan = dev && dev.ctl && dev.ctl.plan;
+    var plan = ST && ST.plan;
     if (h === "plunge") {
-      if (!plan || !plan.plungeAt) return;
-      VIEW = [Math.min(Date.now(), plan.coolAt || Date.now()) - 2 * 36e5, plan.plungeAt + 1.5 * 36e5];
+      if (!plan || !plan.next) return;
+      VIEW = [Math.min(Date.now(), plan.pulldown_start_at || Date.now()) - 2 * 36e5, plan.next.at + 1.5 * 36e5];
     } else {
       VIEW = h === "all" ? [SPAN[0] - 36e5, SPAN[1] + 36e5]
                          : [Date.now() - Number(h) * 36e5 * .75, Date.now() + Number(h) * 36e5 * .25];
@@ -1279,11 +1252,6 @@ async function waterLoad() {
   });
 });
 
-refresh(); chart();
-setInterval(refresh, 30000);
-setInterval(chart, 300000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { refresh(); chart(); } });
-
 /* ---------------- plunge timer ----------------
    Logs the session itself: start time, how long you were in, and the water
    temperature at both ends. Those windows then get excluded from model
@@ -1293,11 +1261,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) { re
 // chiller's sensor reads about 2F high and only in whole degrees, so it is
 // only a fallback. Returns [value, source].
 function waterNow() {
-  if (dev && dev.probes && dev.probes.tub !== null && dev.probes.tub !== undefined &&
-      dev.probes.age_min !== null && dev.probes.age_min < 10) {
-    return [dev.probes.tub, "tub"];
-  }
-  if (dev && dev.temp_current_f) return [dev.temp_current_f, "panel"];
+  if (ST && ST.water && ST.water.age_min < 10) return [ST.water.f, "tub"];
   return [null, null];
 }
 var PT = { target: 180, left: 180, running: false, t0: null, startTemp: null, id: null,
@@ -1414,11 +1378,9 @@ async function ptStart() {
   PT.running = true; PT.left = PT.target; PT.t0 = Date.now();
   var w0 = waterNow();
   PT.startTemp = w0[0]; PT.startSrc = w0[1];
-  PT.startPanel = dev ? dev.temp_current_f : null;
   $("ptGo").className = "pill hide"; $("ptStop").className = "pill";
   $("ptSub").textContent = PT.startTemp === null ? ""
-    : "in at " + PT.startTemp.toFixed(1) + "\u00B0F" +
-      (PT.startSrc === "panel" ? " (panel)" : "");
+    : "in at " + PT.startTemp.toFixed(1) + "\u00B0F";
   try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); AC.resume(); } catch (e) {}
   try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
   PT.id = setInterval(function () {
@@ -1450,13 +1412,11 @@ async function ptEnd(completed) {
     ts: new Date(PT.t0).toISOString(),
     note: (completed ? "" : "stopped early, ") +
           (PT.startTemp !== null
-            ? "in " + PT.startTemp.toFixed(1) + "\u00B0F" +
-              (PT.startSrc === "panel" ? " (panel, no probe)" : "")
+            ? "in " + PT.startTemp.toFixed(1) + "\u00B0F"
             : "no reading") +
           (endTemp !== null && PT.startTemp !== null && Math.abs(endTemp - PT.startTemp) >= .1
             ? ", out " + endTemp.toFixed(1) + "\u00B0F" : "") +
-          (PT.startSrc === "tub" && PT.startPanel
-            ? ", panel said " + PT.startPanel + "\u00B0F" : ""),
+          "",
   });
   $("ptState").textContent = fmt(secs) + " logged";
   $("ptSub").textContent = "drag the dial to set";
@@ -1467,7 +1427,6 @@ $("ptGo").onclick = ptStart;
 $("ptStop").onclick = function () { ptEnd(false); };
 leadLabel();
 drawDial();
-
 
 /* ---- plunge schedule ---- */
 var PLAN = null, SLOT = null;
@@ -1499,35 +1458,15 @@ async function planLoad() {
         ' <button class="ghost tiny" onclick="editSlot(' + s.id + ')">edit</button></td></tr>';
   }).join("") : "<tr><td class='muted tiny'>No plunges scheduled</td></tr>";
 
-  // what the planner intends right now - the reason string from its last run
-  var c = PLAN.control, L = PLAN.last;
-  var dot = function (ok, warn) {
-    var col = ok ? "var(--tub)" : (warn ? "var(--model)" : "var(--red)");
-    return '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;' +
-           'background:' + col + ';margin-right:7px;vertical-align:1px"></span>';
-  };
-  var bits = [];
-  // 1. is the thing that acts alive?
-  var hb = dev && dev.ctl && dev.ctl.heartbeat_ms ? (Date.now() - dev.ctl.heartbeat_ms) / 60000 : null;
-  if (!c || !c.enabled) bits.push(dot(false) + "Controller <b>off</b> \u2014 chiller on its own thermostat");
-  else if (c.dry_run) bits.push(dot(false, true) + "Controller in <b>dry run</b> \u2014 decides, never writes");
-  else if (hb === null || hb > 3) bits.push(dot(false) + "Controller <b>silent</b>" + (hb ? " for " + hb.toFixed(0) + " min" : ""));
-  else bits.push(dot(true) + "Controller alive" + (dev.ctl.phase === "cool" ? ", cooling" : dev.ctl.phase === "idle" ? ", idle" : "") + (L ? ". " + L.reason.replace(/^\[dry\] /, "").replace(/^\[[a-z]+\] /, "").slice(0, 70) : ""));
-  // 2. does it know the water temperature?
-  var pa = dev && dev.probes ? dev.probes.age_min : null;
-  if (pa === null || pa === undefined) bits.push(dot(false) + "No tub probe data");
-  else if (pa > 10) bits.push(dot(false, true) + "Tub probe stale " + pa.toFixed(0) + " min \u2014 using chiller reading");
-  else bits.push(dot(true) + "Tub probe live");
-  // 3. does the chiller hold the plan even if everything else dies?
-  var plan = (dev && dev.timers || []).filter(function (t) { return t.category === "plan"; });
-  if (!plan.length) bits.push(dot(false, true) + "No timers on the chiller \u2014 pulldown depends on the cloud");
-  else bits.push(dot(true) + "On the chiller: " + plan.map(function (t) {
-    return hhmm(t.time) + " to " + t.value + "\u00B0";
-  }).join(", then "));
-  // 4. (removed) The timer-only controller writes dated timers, not the live
-  //     setpoint, so the device setpoint legitimately differs from any logged
-  //     action between pulldowns. A setpoint-vs-intent check would false-alarm.
-  $("planNow").innerHTML = bits.join("<br>");
+  // upcoming week, as the controller sees it
+  var ups = (PLAN.upcoming || []).filter(function (u) { return u.at > Date.now() - 36e5; }).slice(0, 6);
+  var bits = ups.map(function (u) {
+    var d = new Date(u.at);
+    var when = d.toLocaleDateString(undefined, { weekday: "short" }) + " " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return (u.skipped ? '<s style="opacity:.6">' + when + " " + u.label + "</s> <span style='color:var(--model)'>skipped</span>"
+                      : when + " " + u.label + " \u00b7 " + u.target_f + "\u00B0");
+  });
+  $("planNow").innerHTML = bits.length ? "Coming up: " + bits.join(" \u00b7 ") : "";
   if ($("slotEdit").innerHTML === "") SLOT = null;
 }
 
@@ -1664,4 +1603,5 @@ document.querySelectorAll(".tab").forEach(function (b) {
 waterLoad();
 planLoad();
 setInterval(planLoad, 60000);
+
 </script></body></html>
