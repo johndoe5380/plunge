@@ -4,7 +4,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="build" content="20260924004436">
+  <meta name="build" content="20260924005958">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#EEF3F4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0D1A1E" media="(prefers-color-scheme: dark)">
@@ -133,6 +133,17 @@ p.notice{margin:0 0 14px;padding:12px 14px;border-radius:9px;font-size:14.5px;li
       <div class="fld sm"><label>Panel is set to</label><input type="number" id="panelF" step="1" min="36" max="70"></div>
     </div>
     <div class="tiny muted" id="holdNote" style="margin-top:10px;line-height:1.5"></div>
+  </div>
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--rule)">
+    <div class="between">
+      <div><div style="font-size:14.5px">Avoid peak-rate hours</div><div class="tiny muted" id="peakNote"></div></div>
+      <button class="pill" id="peakBtn">&nbsp;</button>
+    </div>
+    <div class="row" style="gap:12px;margin-top:12px;align-items:flex-end;flex-wrap:wrap">
+      <div class="fld sm"><label>From</label><input type="time" id="peakStart"></div>
+      <div class="fld sm"><label>To</label><input type="time" id="peakEnd"></div>
+      <div class="row" id="peakDays" style="gap:4px;flex-wrap:wrap"></div>
+    </div>
   </div>
 </div>
 
@@ -451,6 +462,8 @@ function statusSentence() {
     if (w && w.f <= nx.target_f) s = "Ready for " + nx.label + " at " + fmtWhen(nx.at, true) + ". Holding cold.";
     else if (eta && eta > nx.at + 5 * 60000) s = "Cooling for " + nx.label + ", behind schedule — water should reach " + nx.target_f + "° about " + fmtDur(eta - nx.at) + " after " + fmtWhen(nx.at) + ".";
     else s = "Cooling for " + nx.label + " at " + fmtWhen(nx.at, true) + "." + (eta ? " Should reach " + nx.target_f + "° around " + fmtWhen(eta) + "." : "");
+  } else if (p.phase === "precooled") {
+    s = "Pre-cooled for " + nx.label + " (" + (w ? w.f.toFixed(1) : "?") + "\u00B0). Peak hours \u2014 chiller stays off; the water coasts to the " + fmtWhen(nx.at) + " plunge.";
   } else if (p.phase === "hold-cool") {
     s = "Holding. Cooling to " + c.hold_off_f + "°, then the plug turns off.";
   } else {
@@ -484,10 +497,12 @@ function paint() {
     var inProg = nx.at <= Date.now();
     var line = (inProg ? "<b>Plunge window</b> " + nx.label + " until " + fmtWhen(nx.at + ST.settings.plunge_window_min * 60000)
                        : "<b>Next plunge</b> " + fmtWhen(nx.at, true) + " · " + nx.label + " · " + nx.target_f + "°");
-    if (p.phase !== "pulldown" && p.phase !== "plunge" && p.pulldown_start_at) {
+    if (p.phase !== "pulldown" && p.phase !== "plunge" && p.phase !== "precooled" && p.pulldown_start_at) {
       line += '<br><span class="muted">Cooling starts ' + fmtWhen(p.pulldown_start_at, true) +
-        (p.cool_hours_to_target ? " (" + fmtDur(p.cool_hours_to_target * 36e5) + " of cooling from here)" : "") + "</span>";
+        (p.peak && !p.peak.unavoidable ? ", pre-cooling to " + p.peak.target_f + "\u00B0 by " + fmtWhen(p.peak.deadline) + " (peak hours)" :
+         p.cool_hours_to_target ? " (" + fmtDur(p.cool_hours_to_target * 36e5) + " of cooling from here)" : "") + "</span>";
     }
+    if (p.peak && p.peak.unavoidable) line += '<br><span class="muted">Peak hours can\u2019t be avoided for this one \u2014 the pre-cool target would be below what the chiller reaches.</span>';
     var nxTxt = new Date(nx.at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
     if (!inProg) line += ' <button class="ghost tiny" onclick="skipPlunge(' + nx.at + ',\'' + nxTxt + '\')" style="padding:2px 6px;margin-left:4px">skip</button>';
     $("nextRow").innerHTML = line;
@@ -522,6 +537,20 @@ function paint() {
   if (document.activeElement !== $("holdOn")) $("holdOn").value = c.hold_on_f;
   if (document.activeElement !== $("holdOff")) $("holdOff").value = c.hold_off_f;
   if (document.activeElement !== $("panelF")) $("panelF").value = c.panel_f;
+  var pk = c.peak_avoid;
+  $("peakBtn").textContent = pk ? "On" : "Off";
+  $("peakBtn").className = "pill" + (pk ? " on" : "");
+  var mm = function (v) { return String(Math.floor(v / 60)).padStart(2, "0") + ":" + String(v % 60).padStart(2, "0"); };
+  if (document.activeElement !== $("peakStart")) $("peakStart").value = mm(c.peak_start_min);
+  if (document.activeElement !== $("peakEnd")) $("peakEnd").value = mm(c.peak_end_min);
+  var DN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  $("peakDays").innerHTML = DN.map(function (d, i) {
+    var on = (c.peak_days || []).indexOf(i) >= 0;
+    return '<button class="ghost tiny" data-pd="' + i + '" style="min-width:36px;padding:3px 6px;' + (on ? "border-color:var(--ice);color:var(--ice)" : "") + '">' + d + '</button>';
+  }).join("");
+  $("peakNote").textContent = pk
+    ? "The compressor stays off " + mm(c.peak_start_min) + "\u2013" + mm(c.peak_end_min) + " on the marked days. A plunge in that window is pre-cooled a little below target beforehand and coasts."
+    : "Peak hours are ignored.";
   $("holdNote").textContent = "Between plunges the plug turns on at " + c.hold_on_f + "° and off at " + c.hold_off_f +
     "° to keep the water sanitary. The chiller’s own panel stays at " + c.panel_f + "° by hand — the app never changes it; " +
     "with power it just cools toward that. Never on again within " + c.min_off_min + " min of turning off, never off within 10 min of turning on or 5 min of a compressor start.";
@@ -560,6 +589,20 @@ $("autoBtn").onclick = async function () {
   else { if (!confirm("Turn automatic control off? The plug stays as it is now.")) return; q = { enabled: "0" }; }
   await api("setControl", q); refresh();
 };
+$("peakBtn").onclick = async function () { await api("setControl", { peak_avoid: ST.ctl.peak_avoid ? "0" : "1" }); refresh(); };
+["peakStart", "peakEnd"].forEach(function (id) {
+  $(id).addEventListener("change", async function () {
+    var v = $(id).value.split(":"); if (v.length < 2) return;
+    var q = {}; q[id === "peakStart" ? "peak_start_min" : "peak_end_min"] = String(+v[0] * 60 + +v[1]);
+    await api("setControl", q); refresh();
+  });
+});
+document.addEventListener("click", async function (e) {
+  var t = e.target; if (!t.dataset || t.dataset.pd === undefined) return;
+  var days = (ST.ctl.peak_days || []).slice(), i = +t.dataset.pd, at = days.indexOf(i);
+  if (at >= 0) days.splice(at, 1); else days.push(i);
+  await api("setControl", { peak_days: JSON.stringify(days.sort()) }); refresh();
+});
 ["holdOn", "holdOff", "panelF"].forEach(function (id) {
   $(id).addEventListener("change", async function () {
     var q = {}; q[{ holdOn: "hold_on_f", holdOff: "hold_off_f", panelF: "panel_f" }[id]] = $(id).value;
@@ -582,49 +625,16 @@ var HIST = null, VIEW = null, SPAN = null, CUR = null, SHOW_ROOM = false;
 function toggleRoom() { SHOW_ROOM = !SHOW_ROOM; draw(); }
 
 function forecast(tEnd) {
-  if (!HIST || !HIST.tub.length || !ST) return [];
-  var m = ST.model, c = ST.ctl, p = ST.plan, S = ST.settings;
-  var last = HIST.tub[HIST.tub.length - 1];
-  var T = last.v, t = last.t, step = 5 * 60000, pts = [{ t: t, v: T }];
-  var plug = ST.plug ? !!ST.plug.on : false;
-  var nx = p.next, pdEnd = nx ? nx.at + S.plunge_window_min * 60000 : 0;
-  // pulldown start is recomputed from the forecast water at each step, exactly
-  // as the controller recomputes it from the live water each minute
-  var coolH = function (T0, T1) {
-    if (T0 <= T1) return 0;
-    var asym = m.cool_a / m.cool_b;
-    if (T1 <= asym) return null;
-    return Math.log((T0 - asym) / (T1 - asym)) / m.cool_b;
-  };
-  var leadMs = function (T, target, on) {
-    var h = coolH(on ? T : T + m.mix_bump_f, target);
-    var hours = h === null ? S.max_lead_h : Math.min(h * (1 + S.lead_margin_pct), S.max_lead_h);
-    return hours * 36e5 + S.lead_margin_min * 60000;
-  };
-  var latched = p.phase === "pulldown" || p.phase === "plunge";
-  // hidden warmth above the probe while the water sits still (see mix_bump_f); if the plug is
-  // already off, some has accumulated: about 0.25F per hour off, capped at the bump
-  var strat = (!plug && c.last_off_at) ? Math.min(m.mix_bump_f, 0.25 * (Date.now() - Date.parse(c.last_off_at)) / 36e5) : 0;
-  var end = Math.max(tEnd, nx ? pdEnd + 36e5 : 0, t + 36e5);
-  for (t += step; t <= end && pts.length < 3000; t += step) {
-    var want;
-    if (c.override && t < c.override.until) want = c.override.on;
-    else if (!c.enabled) want = plug;
-    else if (nx && t < pdEnd && (latched || t >= nx.at - leadMs(T, nx.target_f, plug))) { want = true; latched = true; }
-    else if (T >= c.hold_on_f) want = true;
-    else if (T <= c.hold_off_f) want = false;
-    else want = plug;
-    if (nx && t >= pdEnd) { latched = false; }
-    if (want && !plug) { T += strat; strat = 0; }          // pump restarts: reading jumps to the bulk
-    plug = want;
-    var cooling = plug && T > m.floor_f;
-    var rate = cooling ? (m.cool_a - m.cool_b * T) : (plug ? m.k : m.k_off) * (m.ambient_f - T);
-    T += rate * (step / 3600000);
-    if (!plug) strat = Math.min(m.mix_bump_f, strat + rate * (step / 3600000) * 0.5);   // about half the warming hides above the probe
-    if (cooling && T < m.floor_f) T = m.floor_f;
-    pts.push({ t: t, v: T - strat, on: plug });
+  // the server ran the controller forward against the model (state.forecast);
+  // nothing is re-derived here, so the picture cannot disagree with the machine
+  if (!ST || !ST.forecast) return [];
+  var out = [];
+  for (var i = 0; i < ST.forecast.length; i++) {
+    var r = ST.forecast[i];
+    if (r[0] > tEnd + 36e5) break;
+    out.push({ t: r[0], v: r[1], on: !!r[2], phase: r[3] });
   }
-  return pts;
+  return out;
 }
 
 function crosshair(tub, amb, pred, X, Y, a, b, span, W, H, T, B) {
